@@ -1,14 +1,19 @@
 ## legion auth login
 
-Save an API key and check that it works
+Sign in through the browser and save an API key
 
 ### Synopsis
 
-Log in with an API key. legion opens https://legion.ambient.xyz/settings/api-keys in your browser:
-create a key with scope "full" there, copy it, and paste it at the hidden prompt.
-The key is checked against the API before it is saved.
+Sign in through the browser. legion opens Legion's sign-in page, you approve
+"Legion CLI" there, and legion saves the API key the approval creates: scope
+"full", named "Legion CLI (<this computer>)", valid for 90 days. It is listed in
+Settings → API keys, where you can revoke it; legion auth logout revokes it too.
 
-For scripts and CI pipe the key in with --with-token, or skip login and set LEGION_API_KEY.
+The browser must run on this computer (the sign-in returns to a port on
+127.0.0.1). On a remote machine use --paste: create a key in https://legion.ambient.xyz/settings/api-keys
+and paste it at the hidden prompt.
+
+For scripts and CI pipe a key in with --with-token, or skip login and set LEGION_API_KEY.
 
 ```
 legion auth login [flags]
@@ -19,6 +24,7 @@ legion auth login [flags]
 ```
   legion auth login
   legion auth login --no-browser
+  legion auth login --paste
   echo "$LEGION_KEY" | legion auth login --with-token --profile ci
 ```
 
@@ -26,7 +32,8 @@ legion auth login [flags]
 
 ```
   -h, --help         help for login
-      --no-browser   do not open the browser
+      --no-browser   print the sign-in URL instead of opening a browser
+      --paste        paste an API key made in Settings → API keys instead of signing in through the browser
       --with-token   read the API key from stdin
 ```
 

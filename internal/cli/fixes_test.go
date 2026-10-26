@@ -431,7 +431,7 @@ func TestLoginPromptWording(t *testing.T) {
 	h.noKey = true
 	h.reply("GET /v1/me", 200, meFixture())
 	h.tty, h.secret = true, "lgn_x"
-	_, e := h.mustRun("auth", "login", "--no-browser")
+	_, e := h.mustRun("auth", "login", "--paste", "--no-browser")
 	contains(t, "prompt", e, "hidden", "press Enter")
 }
 

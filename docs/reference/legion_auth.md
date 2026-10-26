@@ -39,7 +39,7 @@ legion auth [flags]
 ### SEE ALSO
 
 * [legion](legion.md)	 - Rent GPUs on Ambient Legion
-* [legion auth login](legion_auth_login.md)	 - Save an API key and check that it works
-* [legion auth logout](legion_auth_logout.md)	 - Forget the saved API key
+* [legion auth login](legion_auth_login.md)	 - Sign in through the browser and save an API key
+* [legion auth logout](legion_auth_logout.md)	 - Revoke the key legion auth login made and forget it
 * [legion auth status](legion_auth_status.md)	 - Show the profile, API URL and who the key belongs to
 

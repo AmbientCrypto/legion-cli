@@ -40,6 +40,9 @@ type File struct {
 // Cred is one profile's secret.
 type Cred struct {
 	APIKey string `yaml:"api_key,omitempty"`
+	// BrowserLogin is set when legion auth login made the key itself (LGN-490):
+	// logout then revokes it. A pasted key is left alone.
+	BrowserLogin bool `yaml:"browser_login,omitempty"`
 }
 
 // Credentials is credentials.yaml, kept apart so it can be 0600.

@@ -1,10 +1,10 @@
 ## legion auth logout
 
-Forget the saved API key
+Revoke the key legion auth login made and forget it
 
 ### Synopsis
 
-Remove the API key of the current profile from credentials.yaml. The key itself stays valid; revoke it with: legion api-key revoke.
+Remove the API key of the current profile from credentials.yaml. A key made by browser sign-in is revoked first; a pasted key stays valid (revoke it with: legion api-key revoke).
 
 ```
 legion auth logout [flags]

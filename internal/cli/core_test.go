@@ -158,7 +158,7 @@ func TestAuthLoginInteractive(t *testing.T) {
 	h.noKey = true
 	h.reply("GET /v1/me", 200, meFixture())
 	h.tty, h.secret = true, "lgn_typed"
-	_, e := h.mustRun("auth", "login")
+	_, e := h.mustRun("auth", "login", "--paste")
 	if len(h.opened) != 1 || h.opened[0] != "https://legion.ambient.xyz/settings/api-keys" {
 		t.Fatalf("opened %v", h.opened)
 	}
@@ -167,7 +167,7 @@ func TestAuthLoginInteractive(t *testing.T) {
 	h2.noKey = true
 	h2.reply("GET /v1/me", 200, meFixture())
 	h2.tty, h2.secret = true, "lgn_typed"
-	h2.mustRun("auth", "login", "--no-browser")
+	h2.mustRun("auth", "login", "--paste", "--no-browser")
 	if len(h2.opened) != 0 {
 		t.Fatal("browser opened despite --no-browser")
 	}

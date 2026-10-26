@@ -42,6 +42,9 @@ type harness struct {
 	noKey    bool
 	env      map[string]string
 	opened   []string
+	browser  func(url string) // the person's browser, run when the CLI opens a URL
+	hostname string
+	reads    func(text string) // the person reading stderr as it is written
 	execs    [][]string
 	ctx      context.Context
 }
@@ -133,7 +136,8 @@ func (h *harness) posts() int {
 // run executes the CLI and returns stdout, stderr and the exit code.
 func (h *harness) run(args ...string) (string, string, int) {
 	h.t.Helper()
-	var out, errb bytes.Buffer
+	var out bytes.Buffer
+	errb := &watched{fn: h.reads}
 	env := map[string]string{"LEGION_CONFIG_DIR": h.dir, "LEGION_API_URL": h.srv.URL}
 	if !h.noKey {
 		env["LEGION_API_KEY"] = "lgn_testkey"
@@ -147,12 +151,19 @@ func (h *harness) run(args ...string) (string, string, int) {
 	}
 	e := Env{
 		Ctx:   h.ctx,
-		Stdin: in, Stdout: &out, Stderr: &errb,
+		Stdin: in, Stdout: &out, Stderr: errb,
 		Getenv:   func(k string) string { return env[k] },
 		StdinTTY: h.tty, StdoutTTY: false, StderrTTY: h.tty,
-		ReadSecret:  func(context.Context) (string, error) { return h.secret, nil },
-		OpenBrowser: func(u string) error { h.opened = append(h.opened, u); return nil },
-		LookPath:    func(s string) (string, error) { return "/usr/bin/" + s, nil },
+		ReadSecret: func(context.Context) (string, error) { return h.secret, nil },
+		OpenBrowser: func(u string) error {
+			h.opened = append(h.opened, u)
+			if h.browser != nil {
+				go h.browser(u)
+			}
+			return nil
+		},
+		Hostname: func() (string, error) { return h.hostname, nil },
+		LookPath: func(s string) (string, error) { return "/usr/bin/" + s, nil },
 		Exec: func(path string, argv []string) error {
 			h.execs = append(h.execs, append([]string{path}, argv...))
 			return nil
@@ -161,6 +172,28 @@ func (h *harness) run(args ...string) (string, string, int) {
 	}
 	code := Execute(e, args)
 	return out.String(), errb.String(), code
+}
+
+// watched is stderr as a person sees it: each write is shown to fn.
+type watched struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+	fn  func(string)
+}
+
+func (w *watched) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.fn != nil {
+		w.fn(string(p))
+	}
+	return w.buf.Write(p)
+}
+
+func (w *watched) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
 }
 
 // mustRun fails the test unless the exit code is 0.

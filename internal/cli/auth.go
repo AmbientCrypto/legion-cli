@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"github.com/AmbientCrypto/legion-controller/api"
 	"github.com/spf13/cobra"
 
+	"github.com/AmbientCrypto/legion-cli/internal/client"
 	"github.com/AmbientCrypto/legion-cli/internal/config"
 	"github.com/AmbientCrypto/legion-cli/internal/output"
 )
@@ -24,17 +26,23 @@ func (a *app) authCmd() *cobra.Command {
   legion auth status`,
 	})
 
-	var noBrowser, withToken bool
+	var noBrowser, withToken, paste bool
 	login := &cobra.Command{
 		Use:   "login",
-		Short: "Save an API key and check that it works",
-		Long: `Log in with an API key. legion opens ` + apiKeysURL + ` in your browser:
-create a key with scope "full" there, copy it, and paste it at the hidden prompt.
-The key is checked against the API before it is saved.
+		Short: "Sign in through the browser and save an API key",
+		Long: `Sign in through the browser. legion opens Legion's sign-in page, you approve
+"Legion CLI" there, and legion saves the API key the approval creates: scope
+"full", named "Legion CLI (<this computer>)", valid for 90 days. It is listed in
+Settings → API keys, where you can revoke it; legion auth logout revokes it too.
 
-For scripts and CI pipe the key in with --with-token, or skip login and set LEGION_API_KEY.`,
+The browser must run on this computer (the sign-in returns to a port on
+127.0.0.1). On a remote machine use --paste: create a key in ` + apiKeysURL + `
+and paste it at the hidden prompt.
+
+For scripts and CI pipe a key in with --with-token, or skip login and set LEGION_API_KEY.`,
 		Example: `  legion auth login
   legion auth login --no-browser
+  legion auth login --paste
   echo "$LEGION_KEY" | legion auth login --with-token --profile ci`,
 		Args: args(0, 0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -42,7 +50,7 @@ For scripts and CI pipe the key in with --with-token, or skip login and set LEGI
 			if err != nil {
 				return err
 			}
-			var key string
+			var key, minted string
 			switch {
 			case withToken:
 				b, err := io.ReadAll(a.env.Stdin)
@@ -51,7 +59,11 @@ For scripts and CI pipe the key in with --with-token, or skip login and set LEGI
 				}
 				key = strings.TrimSpace(string(b))
 			case !a.interactive():
-				return usagef("echo $KEY | legion auth login --with-token", "login needs a terminal to paste the key; pass it on stdin with --with-token")
+				return usagef("echo $KEY | legion auth login --with-token", "login needs a terminal; pass a key on stdin with --with-token")
+			case !paste:
+				if key, minted, err = a.browserLogin(cmd, r.APIURL, !noBrowser); err != nil {
+					return err
+				}
 			default:
 				if !noBrowser {
 					if err := a.env.OpenBrowser(apiKeysURL); err != nil {
@@ -75,10 +87,13 @@ For scripts and CI pipe the key in with --with-token, or skip login and set LEGI
 			if err != nil {
 				return err
 			}
-			if err := a.saveKey(r.Profile, key); err != nil {
+			if err := a.saveKey(r.Profile, key, minted != ""); err != nil {
 				return err
 			}
 			a.info("Logged in as %s (org %s)", san(me.User.Name), san(me.Org.Name))
+			if minted != "" {
+				a.info("Saved the API key %q (expires in 90 days; revoke it in Settings → API keys or with legion auth logout).", san(minted))
+			}
 			if sc := a.keyScope(cmd, r.APIURL, key, me); sc != "" && sc != string(api.ApiKeyScopeFull) {
 				a.info("Warning: this key has scope %q; most commands need scope \"full\".", sc)
 			}
@@ -86,13 +101,14 @@ For scripts and CI pipe the key in with --with-token, or skip login and set LEGI
 			return nil
 		},
 	}
-	login.Flags().BoolVar(&noBrowser, "no-browser", false, "do not open the browser")
+	login.Flags().BoolVar(&noBrowser, "no-browser", false, "print the sign-in URL instead of opening a browser")
+	login.Flags().BoolVar(&paste, "paste", false, "paste an API key made in Settings → API keys instead of signing in through the browser")
 	login.Flags().BoolVar(&withToken, "with-token", false, "read the API key from stdin")
 
 	logout := &cobra.Command{
 		Use:     "logout",
-		Short:   "Forget the saved API key",
-		Long:    "Remove the API key of the current profile from credentials.yaml. The key itself stays valid; revoke it with: legion api-key revoke.",
+		Short:   "Revoke the key legion auth login made and forget it",
+		Long:    "Remove the API key of the current profile from credentials.yaml. A key made by browser sign-in is revoked first; a pasted key stays valid (revoke it with: legion api-key revoke).",
 		Example: "  legion auth logout\n  legion auth logout --profile staging",
 		Args:    args(0, 0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -101,6 +117,9 @@ For scripts and CI pipe the key in with --with-token, or skip login and set LEGI
 				return err
 			}
 			if c := a.creds.Profiles[r.Profile]; c != nil {
+				if c.BrowserLogin {
+					a.revokeOwnKey(cmd, r.APIURL, c.APIKey)
+				}
 				delete(a.creds.Profiles, r.Profile)
 				if err := a.st.SaveCreds(a.creds); err != nil {
 					return err
@@ -226,11 +245,40 @@ func (a *app) whoami(cmd *cobra.Command, apiURL, key string) (*api.Me, error) {
 	return need(resp.JSON200)
 }
 
-func (a *app) saveKey(profile, key string) error {
+// revokeOwnKey revokes the key browser sign-in made. Best effort: logout
+// forgets the key either way, and says how to revoke it by hand when it can't.
+func (a *app) revokeOwnKey(cmd *cobra.Command, apiURL, key string) {
+	me, err := a.whoami(cmd, apiURL, key)
+	if err != nil {
+		var ce *client.Error
+		if errors.As(err, &ce) && ce.Status == 401 {
+			return // already revoked or expired
+		}
+		a.info("Could not revoke the key (%v); revoke it in %s.", err, apiKeysURL)
+		return
+	}
+	if me.Credential == nil || me.Credential.ApiKeyId == nil {
+		a.info("Could not tell which key this is; revoke it in %s.", apiKeysURL)
+		return
+	}
+	c, err := a.newClient(apiURL, key)
+	if err == nil {
+		var resp *api.RevokeApiKeyResult
+		resp, err = c.RevokeApiKeyWithResponse(a.ctx(cmd), *me.Credential.ApiKeyId)
+		err = a.ok(resp, err)
+	}
+	if err != nil {
+		a.info("Could not revoke the key (%v); revoke it in %s.", err, apiKeysURL)
+		return
+	}
+	a.info("Revoked the API key %s.", short(key))
+}
+
+func (a *app) saveKey(profile, key string, browserLogin bool) error {
 	if a.creds.Profiles == nil {
 		a.creds.Profiles = map[string]*config.Cred{}
 	}
-	a.creds.Profiles[profile] = &config.Cred{APIKey: key}
+	a.creds.Profiles[profile] = &config.Cred{APIKey: key, BrowserLogin: browserLogin}
 	if err := a.st.SaveCreds(a.creds); err != nil {
 		return err
 	}
