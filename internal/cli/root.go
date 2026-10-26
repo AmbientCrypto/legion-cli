@@ -22,7 +22,7 @@ const rootLong = `legion rents GPUs on Ambient Legion (Ambient GPU Rentals): fin
 start a rental, SSH in, and stop billing when you are done.
 
 Quickstart:
-  legion auth login                     # paste an API key (scope: full)
+  legion auth login                     # sign in through your browser
   legion offer list --gpu-model "RTX 4090"      # case-insensitive substring of the model name
   legion rental create --offer <host-id> --catalog <id>
   legion ssh <rental>                   # connect;  legion rental stop <rental>  to stop billing
@@ -47,7 +47,7 @@ func (a *app) root() *cobra.Command {
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			a.cmdPath = strings.TrimPrefix(cmd.CommandPath(), "legion ")
 			switch strings.Fields(a.cmdPath + " ")[0] {
-			case "config", "profile", "help", "completion", "__complete", "version":
+			case "config", "profile", "help", "completion", "__complete", "version", "update":
 				return nil
 			}
 			_, err := a.format()
@@ -88,7 +88,7 @@ func (a *app) root() *cobra.Command {
 	add(grpStart, a.authCmd(), a.whoamiCmd(), a.offerCmd(), a.catalogCmd(), ssh)
 	add(grpCompute, a.rentalCmd())
 	add(grpAccount, a.sshKeyCmd(), a.billingCmd(), a.apiKeyCmd())
-	add(grpOther, a.configCmd(), a.profileCmd(), a.versionCmd(), a.completionCmd())
+	add(grpOther, a.configCmd(), a.profileCmd(), a.versionCmd(), a.updateCmd(), a.completionCmd())
 	root.AddCommand(topic("environment", "How flags, environment variables and profiles combine", environmentHelp))
 	root.AddCommand(topic("exit-codes", "What legion's exit codes mean", exitCodesHelp))
 	a.wireCompletions(root)
@@ -198,6 +198,9 @@ config directory (for example ~/.config/legion):
   credentials.yaml   API keys, mode 0600 (the directory is 0700)
 
 Colour is off with --no-color, NO_COLOR, TERM=dumb or when output is not a terminal.
+
+On a terminal legion says, at most once a day, when a newer release exists
+(update with 'legion update'). LEGION_NO_UPDATE_CHECK=1, or CI set, turns that off.
 Progress and prompts go to stderr, results to stdout.`
 
 const exitCodesHelp = `legion exits with:

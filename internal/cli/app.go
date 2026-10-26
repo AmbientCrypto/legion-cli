@@ -21,6 +21,7 @@ import (
 	"github.com/AmbientCrypto/legion-cli/internal/client"
 	"github.com/AmbientCrypto/legion-cli/internal/config"
 	"github.com/AmbientCrypto/legion-cli/internal/output"
+	"github.com/AmbientCrypto/legion-cli/internal/selfupdate"
 	"github.com/AmbientCrypto/legion-cli/internal/ui"
 )
 
@@ -37,6 +38,9 @@ type Env struct {
 	Hostname                       func() (string, error) // names the key a browser sign-in makes
 	LookPath                       func(string) (string, error)
 	Exec                           func(path string, argv []string) error // replaces the process on unix
+	ReleasesURL                    string                                 // where legion update looks (selfupdate.DefaultBase)
+	Executable                     func() (string, error)                 // the binary legion update replaces
+	Now                            func() time.Time                       // the update check's clock
 	Home                           string
 	Poll                           time.Duration // wait loop interval
 	Version, Commit, Date          string
@@ -52,6 +56,7 @@ func DefaultEnv(ctx context.Context, version, commit, date string) Env {
 		StderrTTY:   term.IsTerminal(int(os.Stderr.Fd())),
 		ReadSecret:  readSecret,
 		OpenBrowser: openBrowser, Hostname: os.Hostname, LookPath: exec.LookPath, Exec: execReplace,
+		ReleasesURL: selfupdate.DefaultBase, Executable: os.Executable, Now: time.Now,
 		Home: home, Poll: 3 * time.Second, Version: version, Commit: commit, Date: date,
 	}
 }
@@ -117,6 +122,7 @@ func Execute(env Env, args []string) int {
 	root.SetOut(env.Stdout)
 	root.SetErr(env.Stderr)
 	err := root.ExecuteContext(env.Ctx)
+	a.outdatedNotice()
 	if err == nil {
 		return client.ExitOK
 	}

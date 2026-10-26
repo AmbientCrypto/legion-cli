@@ -8,7 +8,7 @@ legion rents GPUs on Ambient Legion (Ambient GPU Rentals): find an offer,
 start a rental, SSH in, and stop billing when you are done.
 
 Quickstart:
-  legion auth login                     # paste an API key (scope: full)
+  legion auth login                     # sign in through your browser
   legion offer list --gpu-model "RTX 4090"      # case-insensitive substring of the model name
   legion rental create --offer <host-id> --catalog <id>
   legion ssh <rental>                   # connect;  legion rental stop <rental>  to stop billing
@@ -47,6 +47,7 @@ legion [flags]
 * [legion rental](legion_rental.md)	 - Create, connect to, stop and delete rentals
 * [legion ssh](legion_ssh.md)	 - SSH into a rental (shortcut for 'legion rental ssh')
 * [legion ssh-key](legion_ssh-key.md)	 - Save the SSH public keys you rent with
+* [legion update](legion_update.md)	 - Update legion to the latest release
 * [legion version](legion_version.md)	 - Print the legion version
 * [legion whoami](legion_whoami.md)	 - Show the user and organization you are logged in as
 

@@ -16,7 +16,7 @@ curl -fsSL https://raw.githubusercontent.com/AmbientCrypto/legion-cli/main/scrip
 
 ## Install
 
-`install.sh` detects your OS and CPU, verifies the release's sha256 against `checksums.txt` and installs `legion` to `~/.local/bin` (`LEGION_INSTALL_DIR` to change, `LEGION_VERSION` to pin). On Windows, download the `.zip` from the [releases page](https://github.com/AmbientCrypto/legion-cli/releases). Re-run the command to upgrade, and check with `legion version`.
+`install.sh` detects your OS and CPU, verifies the release's sha256 against `checksums.txt` and installs `legion` to `~/.local/bin` (`LEGION_INSTALL_DIR` to change, `LEGION_VERSION` to pin). On Windows, download the `.zip` from the [releases page](https://github.com/AmbientCrypto/legion-cli/releases). Upgrade with `legion update` (it checks the download against `checksums.txt` before it replaces the binary); on a terminal legion tells you, at most once a day, when a newer release is out (`LEGION_NO_UPDATE_CHECK=1` turns that off). Every merge to `main` is released.
 
 ## Quickstart (60 seconds)
 
@@ -47,7 +47,7 @@ legion rental export create|list|get|cancel
 legion ssh <rental>                    legion ssh-key list|add|remove
 legion billing balance|charges|activity|ledger
 legion api-key list|create|revoke      legion completion bash|zsh|fish|powershell
-legion version                         legion help environment|exit-codes
+legion version|update                  legion help environment|exit-codes
 ```
 
 Every command has `--help` with examples. **Every flag is in the generated reference: [`docs/reference`](docs/reference).** Nouns are singular with plural aliases (`legion rentals list`).

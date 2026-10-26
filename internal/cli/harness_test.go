@@ -42,8 +42,12 @@ type harness struct {
 	noKey    bool
 	env      map[string]string
 	opened   []string
+	releases string           // the fake GitHub (selfupdate); "" is one that never answers
+	exe      string           // the binary legion update replaces
+	now      time.Time        // the clock of the update check
 	browser  func(url string) // the person's browser, run when the CLI opens a URL
 	hostname string
+	version  string            // legion's own version; "" is 1.2.3
 	reads    func(text string) // the person reading stderr as it is written
 	execs    [][]string
 	ctx      context.Context
@@ -51,7 +55,8 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	h := &harness{t: t, handlers: map[string]http.HandlerFunc{}, dir: filepath.Join(t.TempDir(), "cfg"), home: t.TempDir(), env: map[string]string{}}
+	h := &harness{t: t, handlers: map[string]http.HandlerFunc{}, dir: filepath.Join(t.TempDir(), "cfg"), home: t.TempDir(), env: map[string]string{},
+		now: time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC), releases: "http://127.0.0.1:1"}
 	h.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		h.mu.Lock()
@@ -168,7 +173,10 @@ func (h *harness) run(args ...string) (string, string, int) {
 			h.execs = append(h.execs, append([]string{path}, argv...))
 			return nil
 		},
-		Home: h.home, Poll: time.Millisecond, Version: "1.2.3", Commit: "abc1234", Date: "2026-10-26",
+		ReleasesURL: h.releases,
+		Executable:  func() (string, error) { return h.exe, nil },
+		Now:         func() time.Time { return h.now },
+		Home:        h.home, Poll: time.Millisecond, Version: ptrOr(nonEmpty(h.version), "1.2.3"), Commit: "abc1234", Date: "2026-10-26",
 	}
 	code := Execute(e, args)
 	return out.String(), errb.String(), code
@@ -314,4 +322,11 @@ func body[T any](t *testing.T, c *call) T {
 		t.Fatalf("body %s: %v", c.Body, err)
 	}
 	return v
+}
+
+func nonEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
