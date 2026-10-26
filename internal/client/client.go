@@ -5,13 +5,17 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/AmbientCrypto/legion-controller/api"
+
+	"github.com/AmbientCrypto/legion-cli/internal/config"
 )
 
 // Exit codes, documented by `legion help exit-codes`.
@@ -47,13 +51,31 @@ func New(o Options) (*api.ClientWithResponses, error) {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	hc.Transport = &transport{base: base, token: o.Token, ua: "legion-cli/" + o.Version, debug: o.Debug}
+	u, err := url.Parse(o.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := config.CheckAPIURL(o.BaseURL); err != nil {
+		return nil, err
+	}
+	hc.Transport = &transport{base: base, token: o.Token, host: u.Host, ua: "legion-cli/" + o.Version, debug: o.Debug}
+	// The key must never follow a redirect to another host.
+	hc.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != u.Scheme || req.URL.Host != u.Host {
+			return fmt.Errorf("refusing to follow a redirect to %s", req.URL.Host)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
 	return api.NewClientWithResponses(strings.TrimRight(o.BaseURL, "/"), api.WithHTTPClient(hc))
 }
 
 type transport struct {
 	base  http.RoundTripper
 	token string
+	host  string // the only host that gets the token
 	ua    string
 	debug io.Writer
 }
@@ -61,7 +83,7 @@ type transport struct {
 func (t *transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	r.Header.Set("User-Agent", t.ua)
-	if t.token != "" {
+	if t.token != "" && r.URL.Host == t.host {
 		r.Header.Set("Authorization", "Bearer "+t.token)
 	}
 	start := time.Now()
@@ -96,11 +118,17 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("the API answered HTTP %d", e.Status)
 }
 
+// authCodes are the 403 codes that mean "your credential is wrong"; the other
+// 403s (org_suspended, custom_images_disabled ...) are plain errors.
+var authCodes = map[string]bool{"forbidden": true, "unauthorized": true, "api_key_required": true, "api_key_scope": true, "session_required": true, "oauth_token_mcp_only": true}
+
 // ExitCode maps the answer onto the CLI's exit codes.
 func (e *Error) ExitCode() int {
 	switch {
-	case e.Status == 401 || e.Status == 403:
+	case e.Status == 401 || (e.Status == 403 && authCodes[e.Code]):
 		return ExitAuth
+	case e.Status == 400 || e.Status == 422:
+		return ExitUsage
 	case e.Status == 404:
 		return ExitNotFound
 	case e.Status == 402 || e.Code == "insufficient_credit":

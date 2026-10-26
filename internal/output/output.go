@@ -22,6 +22,25 @@ const Formats = "table|wide|json|yaml|name|jsonpath=<expr>"
 type Format struct {
 	Kind string // table wide json yaml name jsonpath
 	Expr string // jsonpath only
+	path jp.Expr
+}
+
+// ErrNoMatch is returned for a jsonpath that selects nothing.
+var ErrNoMatch = errors.New("jsonpath matched nothing (list output is an array: try '$[*].name')")
+
+// Sanitize removes control characters (C0, DEL, C1) from text that came from
+// the API, so it cannot move the cursor or retitle the terminal. Tabs and
+// newlines become spaces.
+func Sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t' || r == '\n' || r == '\r':
+			return ' '
+		case r < 0x20 || (r >= 0x7f && r <= 0x9f):
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // Parse reads an -o value.
@@ -31,7 +50,11 @@ func Parse(s string) (Format, error) {
 		if rest == "" {
 			return Format{}, errors.New("jsonpath needs an expression, for example -o jsonpath='$[*].name'")
 		}
-		return Format{Kind: "jsonpath", Expr: rest}, nil
+		x, err := compilePath(rest)
+		if err != nil {
+			return Format{}, err
+		}
+		return Format{Kind: "jsonpath", Expr: rest, path: x}, nil
 	}
 	switch k := strings.ToLower(s); k {
 	case "table", "wide", "json", "yaml", "name":
@@ -88,7 +111,7 @@ func Write(w io.Writer, f Format, r Result) error {
 		}
 		return nil
 	case "jsonpath":
-		return writePath(w, f.Expr, r.Data)
+		return writePath(w, f.path, r.Data)
 	}
 	if r.Human != nil {
 		r.Human(w)
@@ -110,7 +133,7 @@ func generic(data any) (any, error) {
 	return v, err
 }
 
-func writePath(w io.Writer, expr string, data any) error {
+func compilePath(expr string) (jp.Expr, error) {
 	expr = strings.TrimSpace(expr)
 	expr = strings.TrimSuffix(strings.TrimPrefix(expr, "{"), "}")
 	if strings.HasPrefix(expr, ".") || strings.HasPrefix(expr, "[") {
@@ -119,28 +142,35 @@ func writePath(w io.Writer, expr string, data any) error {
 	expr = strings.Replace(expr, "$.[", "$[", 1)
 	x, err := jp.ParseString(expr)
 	if err != nil {
-		return fmt.Errorf("bad jsonpath %q: %w", expr, err)
+		return nil, fmt.Errorf("bad jsonpath %q: %w", expr, err)
 	}
+	return x, nil
+}
+
+func writePath(w io.Writer, x jp.Expr, data any) error {
 	v, err := generic(data)
 	if err != nil {
 		return err
 	}
-	for _, m := range x.Get(v) {
-		switch t := m.(type) {
-		case string:
-			fmt.Fprintln(w, t)
-		case map[string]any, []any:
-			b, _ := json.Marshal(t)
-			fmt.Fprintln(w, string(b))
-		default:
-			b, _ := json.Marshal(t)
-			fmt.Fprintln(w, string(b))
+	got := x.Get(v)
+	if len(got) == 0 {
+		return ErrNoMatch
+	}
+	for _, m := range got {
+		if s, ok := m.(string); ok {
+			fmt.Fprintln(w, s)
+			continue
 		}
+		b, _ := json.Marshal(m)
+		fmt.Fprintln(w, string(b))
 	}
 	return nil
 }
 
 func writeTable(w io.Writer, t *Table, wide bool) error {
+	if len(t.Rows) == 0 {
+		return nil // the command already said why the list is empty
+	}
 	n := len(t.Cols)
 	cols := t.Cols
 	if wide {
@@ -153,7 +183,11 @@ func writeTable(w io.Writer, t *Table, wide bool) error {
 		if len(row) > n {
 			row = row[:n]
 		}
-		fmt.Fprintln(tw, strings.Join(row, "\t"))
+		cells := make([]string, len(row))
+		for i, c := range row {
+			cells[i] = Sanitize(c)
+		}
+		fmt.Fprintln(tw, strings.Join(cells, "\t"))
 	}
 	return tw.Flush()
 }
@@ -182,7 +216,7 @@ func ParseDollars(s string) (int64, error) {
 	if err != nil || w < 0 {
 		return 0, fmt.Errorf("%q is not a dollar amount, for example 2.50", s)
 	}
-	f, err := strconv.ParseInt(or0((frac+"00")[:2]), 10, 64)
+	f, err := strconv.ParseInt(or0((frac + "00")[:2]), 10, 64)
 	if err != nil || f < 0 {
 		return 0, fmt.Errorf("%q is not a dollar amount, for example 2.50", s)
 	}

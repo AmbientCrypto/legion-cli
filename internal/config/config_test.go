@@ -30,8 +30,8 @@ func TestResolvePrecedence(t *testing.T) {
 	c := &Credentials{Profiles: map[string]*Cred{"work": {APIKey: "lgn_work"}, "other": {APIKey: "lgn_other"}}}
 
 	tests := []struct {
-		name                          string
-		in                            Inputs
+		name                           string
+		in                             Inputs
 		profile, url, key, out, srcURL string
 	}{
 		{"defaults", Inputs{Getenv: env(nil)}, "work", "https://work.example", "lgn_work", "wide", "profile"},
@@ -128,7 +128,7 @@ func TestConfigSaveLoad(t *testing.T) {
 	}
 }
 
-func TestSetGetUnset(t *testing.T) {
+func TestSetGet(t *testing.T) {
 	p := &Profile{}
 	if err := p.Set("api_url", "https://x.example/"); err != nil {
 		t.Fatal(err)
@@ -145,8 +145,9 @@ func TestSetGetUnset(t *testing.T) {
 	if err := p.Set("output", "wide"); err != nil {
 		t.Fatal(err)
 	}
-	p.Unset("output")
-	if v, _ := p.Get("output"); v != "" {
-		t.Fatal(v)
+	for u, ok := range map[string]bool{"https://a.example": true, "http://localhost:8080": true, "http://127.0.0.1:1": true, "http://[::1]:1": true, "http://a.example": false, "http://localhost.evil.example": false} {
+		if (CheckAPIURL(u) == nil) != ok {
+			t.Errorf("CheckAPIURL(%q) ok=%v", u, !ok)
+		}
 	}
 }

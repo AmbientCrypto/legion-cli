@@ -90,9 +90,8 @@ func (p *Profile) Get(key string) (string, error) {
 func (p *Profile) Set(key, val string) error {
 	switch key {
 	case "api_url":
-		u, err := url.Parse(val)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("api_url must be an http(s) URL, got %q", val)
+		if err := CheckAPIURL(val); err != nil {
+			return err
 		}
 		p.APIURL = strings.TrimRight(val, "/")
 	case "output":
@@ -103,18 +102,24 @@ func (p *Profile) Set(key, val string) error {
 	return nil
 }
 
-// Unset clears a setting.
-func (p *Profile) Unset(key string) {
-	switch key {
-	case "api_url":
-		p.APIURL = ""
-	case "output":
-		p.Output = ""
-	}
-}
-
 func unknownKey(k string) error {
 	return fmt.Errorf("unknown config key %q (valid: %s)", k, strings.Join(Keys, ", "))
+}
+
+// CheckAPIURL requires https, except for a local development server, so an
+// API key is never sent over plain text.
+func CheckAPIURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("api_url must be an https URL, got %q", raw)
+	}
+	switch h := u.Hostname(); {
+	case u.Scheme == "https":
+	case u.Scheme == "http" && (h == "localhost" || h == "127.0.0.1" || h == "::1"):
+	default:
+		return fmt.Errorf("api_url %q must use https (http is allowed only for localhost, 127.0.0.1 and [::1])", raw)
+	}
+	return nil
 }
 
 // Dir is $LEGION_CONFIG_DIR, else <user config dir>/legion.

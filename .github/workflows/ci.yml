@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Every third-party action is pinned to a full commit SHA (the tag in the
+# trailing comment is what it was resolved from). The private controller
+# module (github.com/AmbientCrypto/legion-controller, the generated API
+# client) is fetched with the token passed to git only through
+# GIT_CONFIG_COUNT/KEY_0/VALUE_0 on the steps that resolve modules, the same
+# pattern as legion-agent. It is never written to ~/.gitconfig.
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GOPRIVATE: github.com/AmbientCrypto/*
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.GO_MODULES_TOKEN }}@github.com/.insteadOf
+      GIT_CONFIG_VALUE_0: https://github.com/
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go mod download
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - name: Reference docs are up to date
+        run: |
+          set -euo pipefail
+          rm -rf docs/reference
+          go run ./tools/gendocs docs/reference
+          git diff --exit-code -- docs/reference || { echo "::error::docs/reference is stale: run 'go run ./tools/gendocs docs/reference' and commit"; exit 1; }
+          test -z "$(git status --porcelain -- docs/reference)" || { echo "::error::docs/reference has untracked files"; exit 1; }
+      - name: install.sh passes shellcheck
+        run: shellcheck scripts/install.sh
+
+  # Proves the release before merge: GoReleaser in snapshot mode builds all six
+  # platforms and the archives. Nothing is published. GoReleaser (a third-party
+  # action) builds from the module cache filled by `go mod download` and never
+  # sees the token.
+  release-dry-run:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go mod download
+        env:
+          GOPRIVATE: github.com/AmbientCrypto/*
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.GO_MODULES_TOKEN }}@github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/
+      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish
+        env:
+          GOFLAGS: -mod=readonly
+          GOPROXY: off

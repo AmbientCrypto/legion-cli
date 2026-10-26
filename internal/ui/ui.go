@@ -3,6 +3,8 @@ package ui
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -11,48 +13,78 @@ import (
 	"time"
 )
 
-// Prompter asks questions on Out (stderr) and reads answers from In.
+// Prompter asks questions on Out (stderr) and reads answers from In. Reads
+// give up when Ctx is cancelled (Ctrl-C), so a prompt never traps the user.
 type Prompter struct {
 	In  *bufio.Reader
 	Out io.Writer
+	Ctx context.Context
 }
+
+// ErrNoChoice is returned by Select after three invalid answers.
+var ErrNoChoice = errors.New("no valid choice")
 
 // Ask prints q and reads one line.
 func (p *Prompter) Ask(q string) (string, error) {
 	fmt.Fprintf(p.Out, "%s ", q)
-	line, err := p.In.ReadString('\n')
-	if err != nil && line == "" {
-		return "", fmt.Errorf("no answer: %w", err)
+	type res struct {
+		line string
+		err  error
 	}
-	return strings.TrimSpace(line), nil
+	ch := make(chan res, 1)
+	go func() { l, err := p.In.ReadString('\n'); ch <- res{l, err} }()
+	ctx := p.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		fmt.Fprintln(p.Out)
+		return "", ctx.Err()
+	case r := <-ch:
+		if r.err != nil && r.line == "" {
+			return "", fmt.Errorf("no answer: %w", r.err)
+		}
+		return strings.TrimSpace(r.line), nil
+	}
 }
 
-// Confirm asks a yes/no question, default no.
+// Confirm asks a yes/no question, default no. End of input is a no; an
+// interrupt is an error.
 func (p *Prompter) Confirm(q string) (bool, error) {
 	a, err := p.Ask(q + " [y/N]:")
-	if err != nil {
-		return false, nil
+	if errors.Is(err, context.Canceled) {
+		return false, err
 	}
 	a = strings.ToLower(a)
 	return a == "y" || a == "yes", nil
 }
 
-// Select lists options and returns the chosen index.
+// Select lists options and returns the chosen index. With one option Enter
+// takes it. Three invalid answers give up.
 func (p *Prompter) Select(label string, opts []string) (int, error) {
 	fmt.Fprintln(p.Out, label)
 	for i, o := range opts {
 		fmt.Fprintf(p.Out, "  %d) %s\n", i+1, o)
 	}
-	for {
-		a, err := p.Ask(fmt.Sprintf("Choose 1-%d:", len(opts)))
+	q := fmt.Sprintf("Choose 1-%d:", len(opts))
+	if len(opts) == 1 {
+		q = "Press Enter to choose 1:"
+	}
+	for try := 0; try < 3; try++ {
+		a, err := p.Ask(q)
 		if err != nil {
 			return 0, err
+		}
+		if a == "" && len(opts) == 1 {
+			return 0, nil
 		}
 		if n, err := strconv.Atoi(a); err == nil && n >= 1 && n <= len(opts) {
 			return n - 1, nil
 		}
 		fmt.Fprintln(p.Out, "Not a valid choice.")
 	}
+	return 0, ErrNoChoice
 }
 
 // ColorEnabled follows --no-color, NO_COLOR, TERM=dumb and whether stdout is a terminal.

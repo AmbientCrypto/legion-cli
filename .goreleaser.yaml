@@ -1,0 +1,60 @@
+# GoReleaser v2. `goreleaser release --snapshot --clean --skip=publish` builds
+# everything locally and publishes nothing (the ci workflow does that on PRs).
+version: 2
+project_name: legion
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: legion
+    main: ./cmd/legion
+    binary: legion
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }} -X main.date={{ .Date }}
+
+archives:
+  - id: legion
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "legion_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^ci:"]
+
+release:
+  github:
+    owner: AmbientCrypto
+    name: legion-cli
+
+# Homebrew: enable once a public tap exists (for example AmbientCrypto/homebrew-tap)
+# and HOMEBREW_TAP_TOKEN is a repository secret. Until then install.sh is the way.
+#
+# brews:
+#   - name: legion
+#     repository:
+#       owner: AmbientCrypto
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+#     homepage: https://legion.ambient.xyz
+#     description: "Rent GPUs on Ambient Legion from the command line"
+#     test: |
+#       system "#{bin}/legion", "version"
+#     extra_install: |
+#       generate_completions_from_executable(bin/"legion", "completion")
