@@ -42,6 +42,11 @@ release:
   github:
     owner: AmbientCrypto
     name: legion-cli
+  # The release workflow publishes the draft only after it has minted the tag
+  # (LGN-501): assets exist before the tag, the tag before the release shows.
+  draft: true
+  replace_existing_draft: true
+  target_commitish: "{{ .Commit }}"
 
 # Homebrew: enable once a public tap exists (for example AmbientCrypto/homebrew-tap)
 # and HOMEBREW_TAP_TOKEN is a repository secret. Until then install.sh is the way.
