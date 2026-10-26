@@ -168,6 +168,9 @@ func writePath(w io.Writer, x jp.Expr, data any) error {
 }
 
 func writeTable(w io.Writer, t *Table, wide bool) error {
+	if len(t.Rows) == 0 {
+		return nil // the command already said why the list is empty
+	}
 	n := len(t.Cols)
 	cols := t.Cols
 	if wide {

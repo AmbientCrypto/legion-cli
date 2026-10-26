@@ -96,10 +96,14 @@ hardware, -o name for host names. --catalog shows only hosts that can run that s
 				} else {
 					a.info("No offers match (filters: %s). Try without them: legion offer list", strings.Join(applied, ", "))
 				}
-			} else {
+			}
+			if err := a.emit(offerResult(offers)); err != nil {
+				return err
+			}
+			if len(offers) > 0 {
 				a.info("Rent one: legion rental create --offer <host> --catalog <id>")
 			}
-			return a.emit(offerResult(offers))
+			return nil
 		},
 	}
 	f := list.Flags()
