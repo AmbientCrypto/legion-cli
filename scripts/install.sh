@@ -18,9 +18,9 @@ die() { say "install.sh: $*"; exit 1; }
 
 fetch() { # url dest
   if [ -n "${LEGION_GITHUB_TOKEN:-}" ]; then
-    curl -fsSL -H "Authorization: Bearer ${LEGION_GITHUB_TOKEN}" -o "$2" "$1"
+    curl --proto '=https' --tlsv1.2 -fsSL -H "Authorization: Bearer ${LEGION_GITHUB_TOKEN}" -o "$2" "$1"
   else
-    curl -fsSL -o "$2" "$1"
+    curl --proto '=https' --tlsv1.2 -fsSL -o "$2" "$1"
   fi
 }
 
@@ -40,11 +40,13 @@ esac
 
 version="${LEGION_VERSION:-}"
 if [ -z "$version" ]; then
-  final="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest")" || die "cannot find the latest release"
+  final="$(curl --proto '=https' --tlsv1.2 -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest")" || die "cannot find the latest release"
   version="${final##*/v}"
 fi
-version="${version#v}"
 [ -n "$version" ] || die "cannot work out the version to install"
+# The version ends up in a URL and a file name: letters, digits and . + - only.
+printf '%s' "$version" | grep -Eq '^v?[0-9A-Za-z.+-]+$' || die "invalid version: ${version}"
+version="${version#v}"
 
 archive="legion_${version}_${os}_${arch}.tar.gz"
 base="https://github.com/${REPO}/releases/download/v${version}"

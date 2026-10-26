@@ -4,7 +4,7 @@ List profiles
 
 ### Synopsis
 
-List the profiles in config.yaml and credentials.yaml. The current one is marked with *.
+List the profiles in config.yaml and credentials.yaml. The one in use is marked with *.
 
 ```
 legion profile list [flags]

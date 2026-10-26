@@ -36,8 +36,8 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf docs/reference
-          go run ./cmd/legion docs --dir docs/reference
-          git diff --exit-code -- docs/reference || { echo "::error::docs/reference is stale: run 'go run ./cmd/legion docs --dir docs/reference' and commit"; exit 1; }
+          go run ./tools/gendocs docs/reference
+          git diff --exit-code -- docs/reference || { echo "::error::docs/reference is stale: run 'go run ./tools/gendocs docs/reference' and commit"; exit 1; }
           test -z "$(git status --porcelain -- docs/reference)" || { echo "::error::docs/reference has untracked files"; exit 1; }
       - name: install.sh passes shellcheck
         run: shellcheck scripts/install.sh

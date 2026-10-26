@@ -25,7 +25,7 @@ legion offer list [flags]
 ```
       --catalog string          only hosts that can run this catalog id
       --country stringArray     host country code, e.g. US (repeatable)
-      --gpu-model stringArray   exact GPU model, e.g. "NVIDIA GeForce RTX 4090" (repeatable)
+      --gpu-model stringArray   GPU model, a case-insensitive part of its name, e.g. "rtx 4090" (repeatable)
   -h, --help                    help for list
       --limit int               most offers to list (default 50)
       --max-latency int         most round-trip milliseconds to --region (or to the host's nearest region)

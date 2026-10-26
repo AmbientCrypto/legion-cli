@@ -42,7 +42,6 @@ legion profile [flags]
 
 * [legion](legion.md)	 - Rent GPUs on Ambient Legion
 * [legion profile create](legion_profile_create.md)	 - Create a profile
-* [legion profile current](legion_profile_current.md)	 - Print the profile in use
 * [legion profile delete](legion_profile_delete.md)	 - Delete a profile and its saved key
 * [legion profile list](legion_profile_list.md)	 - List profiles
 * [legion profile use](legion_profile_use.md)	 - Make a profile the default

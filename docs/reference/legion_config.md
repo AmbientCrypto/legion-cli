@@ -6,6 +6,7 @@ Read and change settings of the current profile
 
 Settings are stored per profile in config.yaml. Keys: api_url, output.
 Precedence is flag, then environment, then profile, then default: 'legion help environment'.
+'legion auth status' shows everything in effect; 'legion profile list' shows the profiles.
 
 ```
 legion config [flags]
@@ -14,7 +15,7 @@ legion config [flags]
 ### Examples
 
 ```
-  legion config list
+  legion config get api_url
   legion config set output json
 ```
 
@@ -41,7 +42,5 @@ legion config [flags]
 
 * [legion](legion.md)	 - Rent GPUs on Ambient Legion
 * [legion config get](legion_config_get.md)	 - Print the effective value of one setting
-* [legion config list](legion_config_list.md)	 - Show every setting, its effective value and where it comes from
 * [legion config set](legion_config_set.md)	 - Change a setting of the current profile
-* [legion config unset](legion_config_unset.md)	 - Remove a setting from the current profile
 

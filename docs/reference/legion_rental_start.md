@@ -4,8 +4,9 @@ Start a stopped rental
 
 ### Synopsis
 
-Start a stopped rental again on its host's GPUs. GPU billing starts when it is running.
-Needs credit and free GPUs on the host. Waits until running unless --async.
+Start a stopped rental again on its host's GPUs. GPU billing starts when it is running, at the
+price shown; you are asked to confirm (or pass --yes). Needs credit and free GPUs on the host.
+Waits until running unless --async.
 
 ```
 legion rental start <rental> [flags]
@@ -15,7 +16,7 @@ legion rental start <rental> [flags]
 
 ```
   legion rental start quiet-river-7k2f
-  legion rental start quiet --async
+  legion rental start quiet --yes --async
 ```
 
 ### Options

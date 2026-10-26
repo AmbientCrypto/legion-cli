@@ -5,7 +5,8 @@ Expose a port
 ### Synopsis
 
 Publish the HTTP service listening on --port inside the rental. Without --source anyone on the
-internet can reach it; add --source <cidr> (repeatable, up to 16) to limit it.
+internet can reach it; add --source <cidr> (repeatable, up to 16) to limit it. You are asked to confirm
+(or pass --yes).
 
 ```
 legion rental ingress add <rental> [flags]

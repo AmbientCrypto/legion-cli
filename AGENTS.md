@@ -7,7 +7,7 @@ Read by Claude Code (CLAUDE.md is a symlink to this file), Codex, and other codi
 - Project key is **LGN** (e.g. `LGN-481`, branch `lgn-481-cli`): wherever the conventions below say ENG, use LGN. Put the key in every commit subject.
 - Layout: `cmd/legion` (main), `internal/cli` (commands), `internal/client` (auth header, UA, debug log, problem+json), `internal/config`, `internal/output`, `internal/ui`.
 - TDD: tests first, against an `httptest` fake controller. `go test -race ./...` and `go vet ./...` must pass.
-- `docs/reference/*.md` is generated: `go run ./cmd/legion docs --dir docs/reference`; CI fails when it is stale.
+- `docs/reference/*.md` is generated: `go run ./tools/gendocs docs/reference`; CI fails when it is stale.
 - Never print or log the API key or the `Authorization` header.
 - Bumping the controller API: `go get github.com/AmbientCrypto/legion-controller/api@<tag>`, fix compile errors, run the tests.
 - Private module: `export GOPRIVATE='github.com/AmbientCrypto/*'`.

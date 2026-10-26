@@ -9,7 +9,7 @@ start a rental, SSH in, and stop billing when you are done.
 
 Quickstart:
   legion auth login                     # paste an API key (scope: full)
-  legion offer list --gpu-model "RTX 4090"
+  legion offer list --gpu-model "RTX 4090"      # case-insensitive substring of the model name
   legion rental create --offer <host-id> --catalog <id>
   legion ssh <rental>                   # connect;  legion rental stop <rental>  to stop billing
 

@@ -4,6 +4,7 @@ The command line for [Ambient Legion](https://legion.ambient.xyz) (Ambient GPU R
 rent them, SSH in, and stop billing when you are done.
 
 ```
+$ legion version
 $ legion auth login
 $ legion offer list --gpu-model "NVIDIA GeForce RTX 4090"
 $ legion rental create --offer amber-falcon --catalog pytorch --gpus 2
@@ -21,6 +22,9 @@ curl -fsSL https://raw.githubusercontent.com/AmbientCrypto/legion-cli/main/scrip
 `checksums.txt` and installs `legion` to `~/.local/bin` (`LEGION_INSTALL_DIR` to change,
 `LEGION_VERSION` to pin). On Windows, download the `.zip` from the releases page. Homebrew will
 follow once a public tap exists (see the commented `brews` block in `.goreleaser.yaml`).
+
+Check it worked with `legion version`. Until the releases are public, the installer and `go install`
+need read access to the `AmbientCrypto/legion-cli` repository (set `LEGION_GITHUB_TOKEN` for the installer).
 
 From source: `go install github.com/AmbientCrypto/legion-cli/cmd/legion@latest`
 (needs `GOPRIVATE=github.com/AmbientCrypto/*` while the API client module is private).
@@ -47,7 +51,7 @@ A `<rental>` is an id, a friendly name or any unique prefix. On a terminal, leav
 
 ```
 legion auth login|logout|status        legion whoami
-legion config list|get|set|unset       legion profile list|create|use|current|delete
+legion config get|set                  legion profile list|create|use|delete
 legion catalog list|get                legion offer list|get
 legion rental create|list|get|stop|start|delete|wait|ssh|ssh-config|charges|serve
 legion rental ingress list|add|remove  legion rental backup estimate|create|list|get|delete|cancel|download-link
@@ -75,7 +79,8 @@ Precedence, first match wins: **flag > environment > profile > default** (also `
 
 Files: `config.yaml` (profiles) and `credentials.yaml` (API keys, mode `0600`, directory `0700`; legion
 warns if the permissions are looser). Profiles: `legion profile create staging --api-url https://...`,
-`legion profile use staging`, or `-p staging` per command.
+`legion profile use staging`, or `-p staging` per command. `legion auth status` shows what is in effect;
+the API URL must be https (http only for localhost).
 
 Other global flags: `--no-color` (also `NO_COLOR`, and automatic when not a terminal), `-q/--quiet`
 (results only), `--debug` (method, path, status and duration of each request on stderr; never the key),
@@ -99,7 +104,8 @@ terminal), so machine formats stay clean. Money is US dollars, shown from the AP
 
 ```sh
 source <(legion completion bash)                          # ~/.bashrc
-legion completion zsh > "${fpath[1]}/_legion"             # then restart zsh
+legion completion zsh > "${fpath[1]}/_legion"             # then restart zsh; needs compinit
+                                                          # (echo "autoload -U compinit; compinit" >> ~/.zshrc)
 legion completion fish > ~/.config/fish/completions/legion.fish
 legion completion powershell | Out-String | Invoke-Expression
 ```
@@ -112,9 +118,9 @@ Completion suggests live rental names, host names, catalog ids, saved SSH key la
 | Code | Meaning |
 |---|---|
 | 0 | success |
-| 1 | error |
-| 2 | usage error (bad flag or argument; nothing to confirm with and no `--yes`) |
-| 3 | not logged in, or the key is invalid or lacks scope |
+| 1 | error (including a suspended organization or a feature turned off for it) |
+| 2 | usage error (bad flag or argument, a request the API rejects as invalid; nothing to confirm with and no `--yes`) |
+| 3 | not logged in, or the key is invalid, expired or lacks scope |
 | 4 | not found |
 | 5 | conflict or price changed |
 | 6 | insufficient credit |
@@ -133,7 +139,7 @@ Creating a rental sends a fresh random `Idempotency-Key`.
 ```sh
 export GOPRIVATE='github.com/AmbientCrypto/*'
 go test -race ./... && go vet ./...
-go run ./cmd/legion docs --dir docs/reference   # regenerate the reference; CI checks it is current
+go run ./tools/gendocs docs/reference   # regenerate the reference; CI checks it is current
 ```
 
 The API client is the generated `github.com/AmbientCrypto/legion-controller/api`, pinned in `go.mod`

@@ -4,7 +4,7 @@ List your rentals
 
 ### Synopsis
 
-List the organization's rentals with state and price. Use -o wide for host and SSH endpoint, -o name for scripting.
+List the organization's rentals with state and price. Deleted rentals are hidden unless --all. Use -o wide for host and SSH endpoint, -o name for scripting.
 
 ```
 legion rental list [flags]
@@ -20,6 +20,7 @@ legion rental list [flags]
 ### Options
 
 ```
+      --all    include deleted rentals
   -h, --help   help for list
 ```
 

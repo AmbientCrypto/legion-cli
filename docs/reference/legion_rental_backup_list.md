@@ -4,7 +4,7 @@ List backups
 
 ### Synopsis
 
-List backups of one rental, or of every rental when none is given.
+List backups of one rental, or of every rental when none is given. --state keeps only backups in that state.
 
 ```
 legion rental backup list [rental] [flags]
