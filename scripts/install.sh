@@ -41,7 +41,10 @@ esac
 version="${LEGION_VERSION:-}"
 if [ -z "$version" ]; then
   final="$(curl --proto '=https' --tlsv1.2 -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest")" || die "cannot find the latest release"
-  version="${final##*/v}"
+  case "$final" in
+    */releases/tag/*) version="${final##*/tag/}" ;;
+    *) die "no legion release has been published yet: see https://github.com/${REPO}/releases" ;;
+  esac
 fi
 [ -n "$version" ] || die "cannot work out the version to install"
 # The version ends up in a URL and a file name: letters, digits and . + - only.
