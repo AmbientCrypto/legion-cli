@@ -50,7 +50,7 @@ that host can run it and how many of its GPUs it needs.`,
 			if es == nil {
 				es = []api.CatalogEntry{}
 			}
-			return a.emit(output.Result{Data: es, Names: catalogIDs(es), Table: catalogTable(es)})
+			return a.emit(catalogResult(es))
 		},
 	}
 	list.Flags().StringVar(&kind, "kind", "", "image or model")
@@ -68,7 +68,9 @@ that host can run it and how many of its GPUs it needs.`,
 			}
 			for _, e := range es {
 				if e.Id == as[0] {
-					return a.emit(output.Result{Data: e, Names: []string{e.Id}, Table: catalogTable([]api.CatalogEntry{e}), Human: func(w io.Writer) { catalogDetail(w, e) }})
+					res := catalogResult([]api.CatalogEntry{e})
+					res.Data, res.Human = e, func(w io.Writer) { catalogDetail(w, e) }
+					return a.emit(res)
 				}
 			}
 			return notFoundf("legion catalog list", "no catalog entry %q", as[0])
@@ -94,44 +96,35 @@ func (a *app) catalogEntries(cmd *cobra.Command, host string) ([]api.CatalogEntr
 	return a.catalogFor(a.ctx(cmd), c, hp)
 }
 
-func catalogIDs(es []api.CatalogEntry) []string {
-	n := make([]string, len(es))
-	for i, e := range es {
-		n[i] = e.Id
-	}
-	return n
-}
-
-func catalogTable(es []api.CatalogEntry) *output.Table {
-	t := &output.Table{Cols: []string{"ID", "KIND", "NAME", "MIN VRAM", "DEFAULT"}, Wide: []string{"SIZE", "CUDA", "PROTOCOL", "FITS HOST"}}
-	for _, e := range es {
-		vram, proto := "", ""
-		if e.Serve != nil {
-			vram, proto = fmt.Sprintf("%.0f GB", e.Serve.MinVramGb), string(e.Serve.Protocol)
-		}
-		def := ""
-		if e.Default {
-			def = "yes"
-		}
-		fits := ""
-		if e.Compatible != nil {
-			fits = map[bool]string{true: "yes", false: "no"}[*e.Compatible]
-		}
-		t.Rows = append(t.Rows, []string{e.Id, string(e.Kind), e.Name, vram, def, fmt.Sprintf("%.1f GB", e.SizeGb), e.Cuda, proto, fits})
-	}
-	return t
+func catalogResult(es []api.CatalogEntry) output.Result {
+	return listResult(es, []string{"ID", "KIND", "NAME", "MIN VRAM", "DEFAULT"}, []string{"SIZE", "CUDA", "PROTOCOL", "FITS HOST"},
+		func(e api.CatalogEntry) string { return e.Id },
+		func(e api.CatalogEntry) []string {
+			vram, proto := "", ""
+			if e.Serve != nil {
+				vram, proto = fmt.Sprintf("%.0f GB", e.Serve.MinVramGb), string(e.Serve.Protocol)
+			}
+			def, fits := "", ""
+			if e.Default {
+				def = "yes"
+			}
+			if e.Compatible != nil {
+				fits = map[bool]string{true: "yes", false: "no"}[*e.Compatible]
+			}
+			return []string{e.Id, string(e.Kind), e.Name, vram, def, fmt.Sprintf("%.1f GB", e.SizeGb), e.Cuda, proto, fits}
+		})
 }
 
 func catalogDetail(w io.Writer, e api.CatalogEntry) {
-	fmt.Fprintf(w, "ID:         %s\nName:       %s\nKind:       %s\n%s\n", e.Id, e.Name, e.Kind, e.Description)
-	fmt.Fprintf(w, "Image:      %s\nNeeds:      NVIDIA driver %s+, compute capability %s+, CUDA %s, %.1f GB image\n", e.Reference, e.MinDriverVersion, e.MinComputeCapability, e.Cuda, e.SizeGb)
+	fmt.Fprintf(w, "ID:         %s\nName:       %s\nKind:       %s\n%s\n", san(e.Id), san(e.Name), e.Kind, san(e.Description))
+	fmt.Fprintf(w, "Image:      %s\nNeeds:      NVIDIA driver %s+, compute capability %s+, CUDA %s, %.1f GB image\n", san(e.Reference), san(e.MinDriverVersion), san(e.MinComputeCapability), san(e.Cuda), e.SizeGb)
 	if s := e.Serve; s != nil {
-		fmt.Fprintf(w, "Serves:     %s on port %d (%s, %s)\nVRAM:       %.0f GB minimum, %.0f GB recommended, weights %.0f GB\nLicence:    %s %s\n", s.Model, s.Port, s.Protocol, s.Category, s.MinVramGb, s.RecommendedVramGb, s.WeightsGb, s.License, s.LicenseUrl)
+		fmt.Fprintf(w, "Serves:     %s on port %d (%s, %s)\nVRAM:       %.0f GB minimum, %.0f GB recommended, weights %.0f GB\nLicence:    %s %s\n", san(s.Model), s.Port, s.Protocol, s.Category, s.MinVramGb, s.RecommendedVramGb, s.WeightsGb, san(s.License), san(s.LicenseUrl))
 		if !s.CommercialOk {
 			fmt.Fprintln(w, "            not licensed for commercial use")
 		}
 		if s.Notice != nil {
-			fmt.Fprintf(w, "Notice:     %s\n", *s.Notice)
+			fmt.Fprintf(w, "Notice:     %s\n", san(*s.Notice))
 		}
 	}
 	fmt.Fprintf(w, "Rent:       legion rental create --offer <host> --catalog %s\n", e.Id)

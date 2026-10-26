@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AmbientCrypto/legion-controller/api"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/AmbientCrypto/legion-cli/internal/client"
@@ -36,12 +38,16 @@ Leave the name out on a terminal to pick from a list.`,
 // ---- fetching and resolving ----
 
 func (a *app) listRentals(ctx context.Context, c *api.ClientWithResponses) ([]api.Rental, error) {
-	return listAll(func(cur *string) ([]api.Rental, *string, error) {
-		r, err := c.ListRentalsWithResponse(ctx, &api.ListRentalsParams{Cursor: cur, Limit: ptr(100)})
+	return collect(0, func(cur *string, n int) ([]api.Rental, *string, error) {
+		r, err := c.ListRentalsWithResponse(ctx, &api.ListRentalsParams{Cursor: cur, Limit: &n})
 		if err := a.ok(r, err); err != nil {
 			return nil, nil, err
 		}
-		return r.JSON200.Items, r.JSON200.NextCursor, nil
+		p, err := need(r.JSON200)
+		if err != nil {
+			return nil, nil, err
+		}
+		return p.Items, p.NextCursor, nil
 	})
 }
 
@@ -50,14 +56,20 @@ func (a *app) getRental(ctx context.Context, c *api.ClientWithResponses, id api.
 	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
-	return r.JSON200, nil
+	return need(r.JSON200)
 }
 
 // pickRental resolves the <rental> argument, or offers a picker when it is
-// missing on a terminal. Deleted rentals are skipped unless named exactly.
+// missing on a terminal. A UUID is fetched directly; deleted rentals are
+// skipped unless named exactly.
 func (a *app) pickRental(ctx context.Context, c *api.ClientWithResponses, as []string) (*api.Rental, error) {
 	if len(as) == 0 && !a.interactive() {
 		return nil, usagef("legion "+a.cmdPath+" --help", "missing required argument <rental>")
+	}
+	if len(as) > 0 {
+		if id, err := uuid.Parse(as[0]); err == nil {
+			return a.getRental(ctx, c, id)
+		}
 	}
 	all, err := a.listRentals(ctx, c)
 	if err != nil {
@@ -66,15 +78,10 @@ func (a *app) pickRental(ctx context.Context, c *api.ClientWithResponses, as []s
 	if len(as) > 0 {
 		return matchRental(all, as[0])
 	}
-	var live []api.Rental
-	for _, r := range all {
-		if r.State != api.RentalStateDeleted {
-			live = append(live, r)
-		}
-	}
+	live := liveRentals(all)
 	labels := make([]string, len(live))
 	for i, r := range live {
-		labels[i] = fmt.Sprintf("%-22s %-9s %d GPU  %s", r.Name, r.State, r.GpuCount, r.Image)
+		labels[i] = output.Sanitize(fmt.Sprintf("%-22s %-9s %d GPU  %s", r.Name, r.State, r.GpuCount, r.Image))
 	}
 	i, err := a.pickOne("Which rental?", labels, "missing required argument <rental>", "legion rental list")
 	if err != nil {
@@ -83,15 +90,27 @@ func (a *app) pickRental(ctx context.Context, c *api.ClientWithResponses, as []s
 	return &live[i], nil
 }
 
-// matchRental finds one rental by id, name or unique prefix of either.
+func liveRentals(all []api.Rental) []api.Rental {
+	var live []api.Rental
+	for _, r := range all {
+		if r.State != api.RentalStateDeleted {
+			live = append(live, r)
+		}
+	}
+	return live
+}
+
+// matchRental finds one rental by exact id or name, else by unique prefix
+// among the rentals that are not deleted.
 func matchRental(all []api.Rental, arg string) (*api.Rental, error) {
 	arg = strings.ToLower(strings.TrimSpace(arg))
-	var prefix []api.Rental
 	for i := range all {
-		r := all[i]
-		if r.Id.String() == arg || r.Name == arg {
-			return &r, nil
+		if all[i].Id.String() == arg || all[i].Name == arg {
+			return &all[i], nil
 		}
+	}
+	var prefix []api.Rental
+	for _, r := range liveRentals(all) {
 		if strings.HasPrefix(r.Name, arg) || strings.HasPrefix(r.Id.String(), arg) {
 			prefix = append(prefix, r)
 		}
@@ -114,29 +133,36 @@ func matchRental(all []api.Rental, arg string) (*api.Rental, error) {
 
 func hourly(r api.Rental) int64 { return r.PricePerGpuHour.AmountMinor * int64(r.GpuCount) }
 
-func rentalTable(rs []api.Rental) *output.Table {
-	t := &output.Table{Cols: []string{"NAME", "STATE", "GPUS", "PRICE/GPU-HR", "IMAGE", "CREATED"}, Wide: []string{"ID", "HOST", "SSH"}}
-	for _, r := range rs {
-		ssh := ""
-		if r.Ssh != nil {
-			ssh = fmt.Sprintf("%s:%d", r.Ssh.Host, r.Ssh.Port)
-		}
-		t.Rows = append(t.Rows, []string{r.Name, string(r.State), fmt.Sprint(r.GpuCount), output.Money(r.PricePerGpuHour.AmountMinor, string(r.PricePerGpuHour.Currency)),
-			r.Image, r.CreatedAt.Local().Format("2006-01-02 15:04"), r.Id.String(), r.HostId.String(), ssh})
-	}
-	return t
+func rentalResult(rs []api.Rental) output.Result {
+	return listResult(rs, []string{"NAME", "STATE", "GPUS", "PRICE/GPU-HR", "IMAGE", "CREATED"}, []string{"ID", "HOST", "SSH"},
+		func(r api.Rental) string { return r.Name },
+		func(r api.Rental) []string {
+			ssh := ""
+			if r.Ssh != nil {
+				ssh = fmt.Sprintf("%s:%d", r.Ssh.Host, r.Ssh.Port)
+			}
+			return []string{r.Name, string(r.State), fmt.Sprint(r.GpuCount), signed(api.SignedMoney(r.PricePerGpuHour)), r.Image, ts(r.CreatedAt), r.Id.String(), r.HostId.String(), ssh}
+		})
 }
 
-func rentalNames(rs []api.Rental) []string {
-	n := make([]string, len(rs))
-	for i, r := range rs {
-		n[i] = r.Name
-	}
-	return n
-}
-
+// one renders a single rental in full; with -q only its name.
 func (a *app) one(r api.Rental) output.Result {
-	return output.Result{Data: r, Names: []string{r.Name}, Table: rentalTable([]api.Rental{r}), Human: func(w io.Writer) { rentalDetail(w, a.style(), r) }}
+	res := rentalResult([]api.Rental{r})
+	res.Data = r
+	res.Human = func(w io.Writer) { rentalDetail(w, a.style(), r) }
+	if a.quiet {
+		res.Human = func(w io.Writer) { fmt.Fprintln(w, r.Name) }
+	}
+	return res
+}
+
+// brief renders a rental for stop/delete: machine formats get the data, people
+// only the one-line result printed on stderr (the state in the answer is not
+// final yet).
+func (a *app) brief(r api.Rental) output.Result {
+	res := rentalResult([]api.Rental{r})
+	res.Data, res.Human = r, func(io.Writer) {}
+	return res
 }
 
 func rentalDetail(w io.Writer, st ui.Style, r api.Rental) {
@@ -147,21 +173,21 @@ func rentalDetail(w io.Writer, st ui.Style, r api.Rental) {
 	case api.RentalStateFailed:
 		state = st.Red(state)
 	}
-	fmt.Fprintf(w, "Name:       %s\nID:         %s\nState:      %s\n", st.Bold(r.Name), r.Id, state)
+	fmt.Fprintf(w, "Name:       %s\nID:         %s\nState:      %s\n", st.Bold(san(r.Name)), r.Id, state)
 	if r.FailureReason != nil {
-		fmt.Fprintf(w, "Failure:    %s\n", *r.FailureReason)
+		fmt.Fprintf(w, "Failure:    %s\n", san(*r.FailureReason))
 	}
-	fmt.Fprintf(w, "Image:      %s\nGPUs:       %d (host %s)\n", r.Image, r.GpuCount, r.HostId)
-	fmt.Fprintf(w, "Price:      %s per GPU-hour (%s per hour)\n", output.Money(r.PricePerGpuHour.AmountMinor, string(r.PricePerGpuHour.Currency)), output.Money(hourly(r), string(r.PricePerGpuHour.Currency)))
+	fmt.Fprintf(w, "Image:      %s\nGPUs:       %d (host %s)\n", san(r.Image), r.GpuCount, r.HostId)
+	fmt.Fprintf(w, "Price:      %s per GPU-hour (%s per hour)\n", signed(api.SignedMoney(r.PricePerGpuHour)), signed(api.SignedMoney{AmountMinor: hourly(r), Currency: r.PricePerGpuHour.Currency}))
 	if r.StoragePricePerGibMonth != nil {
-		fmt.Fprintf(w, "Storage:    %s per GiB-month while stopped\n", output.Money(r.StoragePricePerGibMonth.AmountMinor, string(r.StoragePricePerGibMonth.Currency)))
+		fmt.Fprintf(w, "Storage:    %s per GiB-month while stopped\n", signed(api.SignedMoney(*r.StoragePricePerGibMonth)))
 	}
 	fmt.Fprintf(w, "Resources:  %d CPU cores, %s RAM, %d GiB disk\n", r.Resources.CpuCores, output.Bytes(r.Resources.MemoryMib<<20), r.Resources.DiskGib)
 	fmt.Fprintf(w, "Created:    %s\n", r.CreatedAt.Local().Format(time.RFC3339))
 	if r.Serve != nil {
-		fmt.Fprintf(w, "Serving:    %s (%s)  see: legion rental serve %s\n", r.Serve.Model, r.Serve.Kind, r.Name)
+		fmt.Fprintf(w, "Serving:    %s (%s)  see: legion rental serve %s\n", san(r.Serve.Model), r.Serve.Kind, r.Name)
 	}
-	if r.Ssh != nil {
+	if r.Ssh != nil && r.State == api.RentalStateRunning {
 		if argv, err := sshArgv(r, ""); err == nil {
 			fmt.Fprintf(w, "SSH:        %s\n", shellJoin(append([]string{"ssh"}, argv...)))
 		}
@@ -172,11 +198,12 @@ func rentalDetail(w io.Writer, st ui.Style, r api.Rental) {
 // ---- list / get ----
 
 func (a *app) rentalListCmd() *cobra.Command {
-	return &cobra.Command{
+	var all bool
+	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List your rentals",
-		Long:    "List the organization's rentals with state and price. Use -o wide for host and SSH endpoint, -o name for scripting.",
+		Long:    "List the organization's rentals with state and price. Deleted rentals are hidden unless --all. Use -o wide for host and SSH endpoint, -o name for scripting.",
 		Example: `  legion rental list
   legion rental list -o jsonpath='$[?(@.state=="running")].name'`,
 		Args: args(0, 0),
@@ -189,15 +216,17 @@ func (a *app) rentalListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if rs == nil {
-				rs = []api.Rental{}
+			if !all {
+				rs = liveRentals(rs)
 			}
 			if len(rs) == 0 {
 				a.info("No rentals yet. Start one: legion offer list")
 			}
-			return a.emit(output.Result{Data: rs, Names: rentalNames(rs), Table: rentalTable(rs)})
+			return a.emit(rentalResult(rs))
 		},
 	}
+	cmd.Flags().BoolVar(&all, "all", false, "include deleted rentals")
+	return cmd
 }
 
 func (a *app) rentalGetCmd() *cobra.Command {
@@ -208,19 +237,13 @@ func (a *app) rentalGetCmd() *cobra.Command {
 		Example: "  legion rental get quiet-river-7k2f\n  legion rental get quiet -o json",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			c, err := a.api()
-			if err != nil {
-				return err
-			}
-			r, err := a.pickRental(a.ctx(cmd), c, as)
-			if err != nil {
-				return err
-			}
-			fresh, err := a.getRental(a.ctx(cmd), c, r.Id)
-			if err != nil {
-				return err
-			}
-			return a.emit(a.one(*fresh))
+			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
+				fresh, err := a.getRental(ctx, c, r.Id)
+				if err != nil {
+					return err
+				}
+				return a.emit(a.one(*fresh))
+			})
 		},
 	}
 }
@@ -239,32 +262,27 @@ Start it again with: legion rental start. Waits until stopped unless --async.`,
 		Example: "  legion rental stop quiet-river-7k2f\n  legion rental stop quiet --yes --async",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			c, err := a.api()
-			if err != nil {
-				return err
-			}
-			r, err := a.pickRental(a.ctx(cmd), c, as)
-			if err != nil {
-				return err
-			}
-			q := fmt.Sprintf("Stop %s? The workload stops and the workspace is kept, billed for storage per GiB until deleted.", r.Name)
-			if err := a.confirm(q, fmt.Sprintf("refusing to stop %s without confirmation: its workload stops and the workspace is billed for storage until deleted", r.Name)); err != nil {
-				return err
-			}
-			resp, err := c.StopRentalWithResponse(a.ctx(cmd), r.Id, &api.StopRentalParams{})
-			if err := a.ok(resp, err); err != nil {
-				return err
-			}
-			final := resp.JSON200
-			if !async {
-				if final, err = a.waitFor(a.ctx(cmd), c, r.Id, "stopped", waitTimeout, false); err != nil {
+			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
+				q := fmt.Sprintf("Stop %s? The workload stops and the workspace is kept, billed for storage per GiB until deleted.", r.Name)
+				if err := a.confirm(q, fmt.Sprintf("refusing to stop %s without confirmation: its workload stops and the workspace is billed for storage until deleted", r.Name)); err != nil {
 					return err
 				}
-			}
-			a.info("Stopped %s: the workload is stopped and GPU billing has ended. The workspace is kept and billed for storage per GiB until deleted.", r.Name)
-			a.info("Resume: legion rental start %s", r.Name)
-			a.info("Destroy the workspace and end all billing: legion rental delete %s", r.Name)
-			return a.emit(a.one(*final))
+				resp, err := c.StopRentalWithResponse(ctx, r.Id, &api.StopRentalParams{})
+				if err := a.ok(resp, err); err != nil {
+					return err
+				}
+				final := ptrOr(resp.JSON200, *r)
+				if !async {
+					f, err := a.waitFor(ctx, c, r.Id, "stopped", waitTimeout, false)
+					if err != nil {
+						return err
+					}
+					final = *f
+				}
+				a.info("Stopped %s: the workload is stopped and GPU billing has ended. The workspace is kept and billed for storage per GiB until deleted.", r.Name)
+				a.info("Resume: legion rental start %s   |   Delete it and end all billing: legion rental delete %s", r.Name, r.Name)
+				return a.emit(a.brief(final))
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&async, "async", false, "return without waiting for the rental to stop")
@@ -278,35 +296,37 @@ func (a *app) rentalStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start <rental>",
 		Short: "Start a stopped rental",
-		Long: `Start a stopped rental again on its host's GPUs. GPU billing starts when it is running.
-Needs credit and free GPUs on the host. Waits until running unless --async.`,
-		Example: "  legion rental start quiet-river-7k2f\n  legion rental start quiet --async",
+		Long: `Start a stopped rental again on its host's GPUs. GPU billing starts when it is running, at the
+price shown; you are asked to confirm (or pass --yes). Needs credit and free GPUs on the host.
+Waits until running unless --async.`,
+		Example: "  legion rental start quiet-river-7k2f\n  legion rental start quiet --yes --async",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			c, err := a.api()
-			if err != nil {
-				return err
-			}
-			r, err := a.pickRental(a.ctx(cmd), c, as)
-			if err != nil {
-				return err
-			}
-			resp, err := c.StartRentalWithResponse(a.ctx(cmd), r.Id)
-			if err := a.ok(resp, err); err != nil {
-				return err
-			}
-			final := resp.JSON200
-			if !async {
-				if final, err = a.waitFor(a.ctx(cmd), c, r.Id, "running", waitTimeout, true); err != nil {
+			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
+				price := fmt.Sprintf("%s per hour (%d x %s per GPU-hour)", signed(api.SignedMoney{AmountMinor: hourly(*r), Currency: r.PricePerGpuHour.Currency}), r.GpuCount, signed(api.SignedMoney(r.PricePerGpuHour)))
+				if err := a.confirm(fmt.Sprintf("Start %s? GPU billing resumes at %s.", r.Name, price),
+					fmt.Sprintf("refusing to start %s without confirmation: GPU billing would resume at %s", r.Name, price)); err != nil {
 					return err
 				}
-				a.info("Started %s. GPU billing is running.", r.Name)
-				a.info("Connect: legion ssh %s", r.Name)
-			} else {
-				a.info("Starting %s. Wait for it: legion rental wait %s", r.Name, r.Name)
-			}
-			a.info("Stop billing: legion rental stop %s", r.Name)
-			return a.emit(a.one(*final))
+				resp, err := c.StartRentalWithResponse(ctx, r.Id)
+				if err := a.ok(resp, err); err != nil {
+					return err
+				}
+				final := ptrOr(resp.JSON200, *r)
+				if async {
+					a.info("Starting %s. Wait for it: legion rental wait %s", r.Name, r.Name)
+				} else {
+					f, err := a.waitRunning(ctx, c, r, waitTimeout)
+					if err != nil {
+						return err
+					}
+					final = *f
+					a.info("Started %s. GPU billing is running.", r.Name)
+					a.info("Connect: legion ssh %s", r.Name)
+				}
+				a.info("Stop billing: legion rental stop %s", r.Name)
+				return a.emit(a.one(final))
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&async, "async", false, "return without waiting for the rental to run")
@@ -325,31 +345,28 @@ name to confirm; in scripts pass --yes.`,
 		Example: "  legion rental delete quiet-river-7k2f\n  legion rental delete quiet-river-7k2f --yes",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			c, err := a.api()
-			if err != nil {
-				return err
-			}
-			r, err := a.pickRental(a.ctx(cmd), c, as)
-			if err != nil {
-				return err
-			}
-			if !a.yes {
-				if !a.interactive() {
-					return usagef("Add --yes to delete without a prompt.", "refusing to delete %s without confirmation: deleting destroys the workspace for good", r.Name)
+			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
+				if !a.yes {
+					if !a.interactive() {
+						return usagef("Add --yes to delete without a prompt.", "refusing to delete %s without confirmation: deleting destroys the workspace for good", r.Name)
+					}
+					fmt.Fprintf(a.env.Stderr, "Deleting %s destroys the workspace for good. Back it up first if you need it: legion rental backup create %s\n", r.Name, r.Name)
+					got, err := a.prompt.Ask(fmt.Sprintf("Type the rental name (%s) to confirm:", r.Name))
+					if errors.Is(err, context.Canceled) {
+						return err
+					}
+					if err != nil || got != r.Name {
+						return &cliError{Msg: "aborted: the name did not match", Exit: client.ExitError}
+					}
 				}
-				fmt.Fprintf(a.env.Stderr, "Deleting %s destroys the workspace for good. Back it up first if you need it: legion rental backup create %s\n", r.Name, r.Name)
-				got, err := a.prompt.Ask(fmt.Sprintf("Type the rental name (%s) to confirm:", r.Name))
-				if err != nil || got != r.Name {
-					return &cliError{Msg: "aborted: the name did not match", Exit: client.ExitError}
+				resp, err := c.DeleteRentalWithResponse(ctx, r.Id, &api.DeleteRentalParams{})
+				if err := a.ok(resp, err); err != nil {
+					return err
 				}
-			}
-			resp, err := c.DeleteRentalWithResponse(a.ctx(cmd), r.Id, &api.DeleteRentalParams{})
-			if err := a.ok(resp, err); err != nil {
-				return err
-			}
-			a.info("Deleting %s: the workspace is being destroyed and billing has ended.", r.Name)
-			a.info("Check: legion rental list")
-			return a.emit(a.one(*resp.JSON200))
+				a.info("Deleting %s: the workspace is being destroyed and billing has ended.", r.Name)
+				a.info("Check: legion rental list --all")
+				return a.emit(a.brief(ptrOr(resp.JSON200, *r)))
+			})
 		},
 	}
 }
@@ -370,24 +387,29 @@ Use it in scripts after 'legion rental create --async'.`,
 			if forState != "running" && forState != "stopped" {
 				return usagef("legion rental wait --help", "--for must be running or stopped, got %q", forState)
 			}
-			c, err := a.api()
-			if err != nil {
-				return err
-			}
-			r, err := a.pickRental(a.ctx(cmd), c, as)
-			if err != nil {
-				return err
-			}
-			final, err := a.waitFor(a.ctx(cmd), c, r.Id, forState, timeout, forState == "running")
-			if err != nil {
-				return err
-			}
-			return a.emit(a.one(*final))
+			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
+				final, err := a.waitFor(ctx, c, r.Id, forState, timeout, forState == "running")
+				if err != nil {
+					return err
+				}
+				return a.emit(a.one(*final))
+			})
 		},
 	}
 	cmd.Flags().StringVar(&forState, "for", "running", "state to wait for: running or stopped")
 	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "give up after this long")
 	return cmd
+}
+
+// waitRunning is waitFor "running" for commands that start billing: when the
+// wait ends early it says the rental is still billing and how to stop it.
+func (a *app) waitRunning(ctx context.Context, c *api.ClientWithResponses, r *api.Rental, timeout time.Duration) (*api.Rental, error) {
+	final, err := a.waitFor(ctx, c, r.Id, "running", timeout, true)
+	var ce *cliError
+	if errors.Is(err, context.Canceled) || (errors.As(err, &ce) && ce.Code == "wait_timeout") {
+		fmt.Fprintf(a.env.Stderr, "The rental is still billing. Stop it: legion rental stop %s\n", r.Name)
+	}
+	return final, err
 }
 
 // waitFor polls until the rental is running (with an SSH endpoint when
@@ -445,28 +467,25 @@ func (a *app) rentalChargesCmd() *cobra.Command {
 		Example: "  legion rental charges quiet-river-7k2f\n  legion rental charges quiet -o json",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			c, err := a.api()
-			if err != nil {
-				return err
-			}
-			r, err := a.pickRental(a.ctx(cmd), c, as)
-			if err != nil {
-				return err
-			}
-			resp, err := c.GetRentalChargesWithResponse(a.ctx(cmd), r.Id)
-			if err := a.ok(resp, err); err != nil {
-				return err
-			}
-			ch := resp.JSON200
-			return a.emit(output.Result{Data: ch, Human: func(w io.Writer) {
-				total := ch.Charged.AmountMinor + ch.StorageCharged.AmountMinor
-				fmt.Fprintf(w, "Rental:   %s\nBilled:   %s\nCompute:  %s\nStorage:  %s\n", r.Name, output.Duration(ch.Seconds), signed(ch.Charged), signed(ch.StorageCharged))
-				if ch.BackupCharged != nil {
-					total += ch.BackupCharged.AmountMinor
-					fmt.Fprintf(w, "Backups:  %s\n", signed(*ch.BackupCharged))
+			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
+				resp, err := c.GetRentalChargesWithResponse(ctx, r.Id)
+				if err := a.ok(resp, err); err != nil {
+					return err
 				}
-				fmt.Fprintf(w, "Total:    %s\n", output.Money(total, string(ch.Charged.Currency)))
-			}})
+				ch, err := need(resp.JSON200)
+				if err != nil {
+					return err
+				}
+				return a.emit(output.Result{Data: ch, Human: func(w io.Writer) {
+					total := ch.Charged.AmountMinor + ch.StorageCharged.AmountMinor
+					fmt.Fprintf(w, "Rental:   %s\nBilled:   %s\nCompute:  %s\nStorage:  %s\n", r.Name, output.Duration(ch.Seconds), signed(ch.Charged), signed(ch.StorageCharged))
+					if ch.BackupCharged != nil {
+						total += ch.BackupCharged.AmountMinor
+						fmt.Fprintf(w, "Backups:  %s\n", signed(*ch.BackupCharged))
+					}
+					fmt.Fprintf(w, "Total:    %s\n", output.Money(total, string(ch.Charged.Currency)))
+				}})
+			})
 		},
 	}
 }
@@ -483,26 +502,23 @@ when you ask, never in 'rental get'.`,
 		Example: "  legion rental serve quiet-river-7k2f\n  legion rental serve quiet-river-7k2f -o jsonpath=$.url",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			c, err := a.api()
-			if err != nil {
-				return err
-			}
-			r, err := a.pickRental(a.ctx(cmd), c, as)
-			if err != nil {
-				return err
-			}
-			resp, err := c.GetRentalServeWithResponse(a.ctx(cmd), r.Id)
-			if err := a.ok(resp, err); err != nil {
-				return err
-			}
-			s := resp.JSON200
-			return a.emit(output.Result{Data: s, Human: func(w io.Writer) {
-				fmt.Fprintf(w, "Model:    %s (%s)\nStatus:   %s", s.Model, s.Kind, s.Status)
-				if s.StatusReason != nil {
-					fmt.Fprintf(w, " (%s)", *s.StatusReason)
+			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
+				resp, err := c.GetRentalServeWithResponse(ctx, r.Id)
+				if err := a.ok(resp, err); err != nil {
+					return err
 				}
-				fmt.Fprintf(w, "\nURL:      %s\nAPI key:  %s\n", ptrOr(s.Url, "(not ready yet)"), s.ApiKey)
-			}})
+				s, err := need(resp.JSON200)
+				if err != nil {
+					return err
+				}
+				return a.emit(output.Result{Data: s, Human: func(w io.Writer) {
+					fmt.Fprintf(w, "Model:    %s (%s)\nStatus:   %s", san(s.Model), s.Kind, s.Status)
+					if s.StatusReason != nil {
+						fmt.Fprintf(w, " (%s)", san(*s.StatusReason))
+					}
+					fmt.Fprintf(w, "\nURL:      %s\nAPI key:  %s\n", san(ptrOr(s.Url, "(not ready yet)")), s.ApiKey)
+				}})
+			})
 		},
 	}
 }

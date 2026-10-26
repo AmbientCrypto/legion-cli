@@ -69,7 +69,7 @@ func TestRentalCreateDryRun(t *testing.T) {
 	h := newHarness(t)
 	h.stdFixtures()
 	out, _ := h.mustRun(createArgs("--dry-run")...)
-	contains(t, "preview", out, "amber-falcon", "RTX 4090", "2 x", "$2.50", "$5.00", "Balance", "$50.00", "pytorch/pytorch:2", "laptop")
+	contains(t, "preview", out, "amber-falcon", "RTX 4090", "GPUs:      2", "$2.50", "$5.00", "Balance", "$50.00", "pytorch/pytorch:2", "laptop")
 	if h.posts() != 0 {
 		t.Fatal("dry-run sent a write")
 	}

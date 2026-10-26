@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 
 	"github.com/AmbientCrypto/legion-controller/api"
@@ -57,8 +58,8 @@ For scripts and CI pipe the key in with --with-token, or skip login and set LEGI
 						a.info("Could not open a browser (%v).", err)
 					}
 				}
-				fmt.Fprintf(a.env.Stderr, "Open %s and create an API key with scope \"full\".\nPaste the key (input is hidden): ", apiKeysURL)
-				key, err = a.env.ReadSecret()
+				fmt.Fprintf(a.env.Stderr, "Open %s and create an API key with scope \"full\".\nPaste the key (it is hidden: nothing is shown), then press Enter: ", apiKeysURL)
+				key, err = a.env.ReadSecret(a.ctx(cmd))
 				if err != nil {
 					return err
 				}
@@ -67,6 +68,9 @@ For scripts and CI pipe the key in with --with-token, or skip login and set LEGI
 			if key == "" {
 				return usagef("legion auth login --help", "no API key given")
 			}
+			if r.APIURL != config.DefaultAPIURL {
+				a.info("Sending your key to %s", hostOf(r.APIURL))
+			}
 			me, err := a.whoami(cmd, r.APIURL, key)
 			if err != nil {
 				return err
@@ -74,9 +78,9 @@ For scripts and CI pipe the key in with --with-token, or skip login and set LEGI
 			if err := a.saveKey(r.Profile, key); err != nil {
 				return err
 			}
-			a.info("Logged in as %s (org %s)", me.User.Name, me.Org.Name)
-			if me.Credential != nil && me.Credential.Scope != api.ApiKeyScopeFull {
-				a.info("Warning: this key has scope %q; most commands need scope \"full\".", me.Credential.Scope)
+			a.info("Logged in as %s (org %s)", san(me.User.Name), san(me.Org.Name))
+			if sc := a.keyScope(cmd, r.APIURL, key, me); sc != "" && sc != string(api.ApiKeyScopeFull) {
+				a.info("Warning: this key has scope %q; most commands need scope \"full\".", sc)
 			}
 			a.info("Next: legion offer list")
 			return nil
@@ -98,7 +102,7 @@ For scripts and CI pipe the key in with --with-token, or skip login and set LEGI
 			}
 			if c := a.creds.Profiles[r.Profile]; c != nil {
 				delete(a.creds.Profiles, r.Profile)
-				if err := a.store().SaveCreds(a.creds); err != nil {
+				if err := a.st.SaveCreds(a.creds); err != nil {
 					return err
 				}
 			}
@@ -132,14 +136,14 @@ For scripts and CI pipe the key in with --with-token, or skip login and set LEGI
 			if r.Sources["api_key"] == "env" {
 				src = "LEGION_API_KEY"
 			}
-			scope := ""
-			if me.Credential != nil {
-				scope = string(me.Credential.Scope)
+			scope := a.keyScope(cmd, r.APIURL, r.APIKey, me)
+			if scope == "" {
+				scope = "unknown"
 			}
 			data := map[string]any{"profile": r.Profile, "api_url": r.APIURL, "key": short(r.APIKey), "key_source": src, "scope": scope, "me": me}
 			return a.emit(output.Result{Data: data, Human: func(w io.Writer) {
 				fmt.Fprintf(w, "Profile:  %s\nAPI URL:  %s\nKey:      %s (%s)\nScope:    %s\n", r.Profile, r.APIURL, short(r.APIKey), src, scope)
-				fmt.Fprintf(w, "User:     %s <%s>\nOrg:      %s (%s)\n", me.User.Name, me.User.Email, me.Org.Name, me.Role)
+				fmt.Fprintf(w, "User:     %s <%s>\nOrg:      %s (%s)\n", san(me.User.Name), san(string(me.User.Email)), san(me.Org.Name), me.Role)
 			}})
 		},
 	}
@@ -167,15 +171,51 @@ func (a *app) whoamiCmd() *cobra.Command {
 				return err
 			}
 			return a.emit(output.Result{Data: me, Names: []string{string(me.User.Email)}, Human: func(w io.Writer) {
-				fmt.Fprintf(w, "%s <%s>\nOrg: %s (%s)\n", me.User.Name, me.User.Email, me.Org.Name, me.Role)
+				fmt.Fprintf(w, "%s <%s>\nOrg: %s (%s)\n", san(me.User.Name), san(string(me.User.Email)), san(me.Org.Name), me.Role)
 			}})
 		},
 	}
 }
 
+func hostOf(raw string) string {
+	if u, err := url.Parse(raw); err == nil {
+		return u.Host
+	}
+	return raw
+}
+
+// keyScope is the scope of the key in use: from /v1/me, else looked up in the
+// key list by id. Empty when it cannot be found.
+func (a *app) keyScope(cmd *cobra.Command, apiURL, key string, me *api.Me) string {
+	cr := me.Credential
+	if cr == nil {
+		return ""
+	}
+	if cr.Scope != "" {
+		return string(cr.Scope)
+	}
+	if cr.ApiKeyId == nil {
+		return ""
+	}
+	c, err := a.newClient(apiURL, key)
+	if err != nil {
+		return ""
+	}
+	keys, err := a.apiKeys(a.ctx(cmd), c)
+	if err != nil {
+		return ""
+	}
+	for _, k := range keys {
+		if k.Id == *cr.ApiKeyId {
+			return string(k.Scope)
+		}
+	}
+	return ""
+}
+
 // whoami calls getMe with the given key.
-func (a *app) whoami(cmd *cobra.Command, url, key string) (*api.Me, error) {
-	c, err := a.newClient(url, key)
+func (a *app) whoami(cmd *cobra.Command, apiURL, key string) (*api.Me, error) {
+	c, err := a.newClient(apiURL, key)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +223,7 @@ func (a *app) whoami(cmd *cobra.Command, url, key string) (*api.Me, error) {
 	if err := a.ok(resp, err); err != nil {
 		return nil, err
 	}
-	return resp.JSON200, nil
+	return need(resp.JSON200)
 }
 
 func (a *app) saveKey(profile, key string) error {
@@ -191,12 +231,12 @@ func (a *app) saveKey(profile, key string) error {
 		a.creds.Profiles = map[string]*config.Cred{}
 	}
 	a.creds.Profiles[profile] = &config.Cred{APIKey: key}
-	if err := a.store().SaveCreds(a.creds); err != nil {
+	if err := a.st.SaveCreds(a.creds); err != nil {
 		return err
 	}
 	a.cfg.Ensure(profile)
 	if a.cfg.CurrentProfile == "" {
 		a.cfg.CurrentProfile = profile
 	}
-	return a.store().SaveConfig(a.cfg)
+	return a.st.SaveConfig(a.cfg)
 }

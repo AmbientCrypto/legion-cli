@@ -15,6 +15,7 @@ import (
 type cliError struct {
 	Msg, Code, Hint string
 	Exit            int
+	After           string // printed after the Hint (a preview of what was not done)
 }
 
 func (e *cliError) Error() string { return e.Msg }
@@ -35,17 +36,23 @@ var errNotLoggedIn = &cliError{Msg: "not logged in", Code: "not_logged_in", Hint
 
 // Described is an error ready to print: Error/Code/Hint and the exit code.
 type Described struct {
-	Message, Code, Hint string
-	Exit                int
+	Message, Code, Hint, After string
+	Exit                       int
 }
 
 // Describe turns any error into the three lines the CLI prints. cmdPath is
 // the command that failed ("rental get"); it picks the right list command
 // for not-found hints.
 func Describe(err error, cmdPath string) Described {
+	d := describe(err, cmdPath)
+	d.Message, d.Code, d.Hint = output.Sanitize(d.Message), output.Sanitize(d.Code), output.Sanitize(d.Hint)
+	return d
+}
+
+func describe(err error, cmdPath string) Described {
 	var ce *cliError
 	if errors.As(err, &ce) {
-		return Described{ce.Msg, ce.Code, ce.Hint, ce.Exit}
+		return Described{ce.Msg, ce.Code, ce.Hint, ce.After, ce.Exit}
 	}
 	var e *client.Error
 	if errors.As(err, &e) {
@@ -73,6 +80,9 @@ func Describe(err error, cmdPath string) Described {
 
 func describeAPI(e *client.Error, path string) Described {
 	d := Described{Message: e.Error(), Code: e.Code, Exit: e.ExitCode()}
+	if e.Status == 401 {
+		d.Message = "Your API key is invalid, expired or revoked."
+	}
 	switch {
 	case e.Code == "api_key_scope":
 		d.Hint = "This API key cannot do that. Create a key with scope full and log in again: legion auth login"
@@ -91,6 +101,12 @@ func describeAPI(e *client.Error, path string) Described {
 		d.Hint = "Pick a host that can run it: legion offer list --catalog <id>"
 	case e.Code == "org_suspended":
 		d.Hint = "Your organization is suspended. Contact Ambient support."
+	case e.Code == "custom_images_disabled":
+		d.Hint = "Custom images are turned off for your organization. Use a catalog image: legion catalog list"
+	case e.Code == "catalog_entry_disabled":
+		d.Hint = "That catalog entry is turned off. Pick another: legion catalog list"
+	case e.Code == "access_not_approved" || e.Code == "terms_not_accepted" || e.Code == "email_unverified":
+		d.Hint = "Finish setting up your account in the web console: https://legion.ambient.xyz"
 	case e.Code == "rate_limited" || e.Status == 429:
 		d.Hint = "Wait a moment and retry."
 	case e.Status == 404:

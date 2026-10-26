@@ -11,46 +11,20 @@ import (
 )
 
 func (a *app) configCmd() *cobra.Command {
+	keys := strings.Join(config.Keys, ", ")
 	cmd := group(&cobra.Command{
 		Use:   "config",
 		Short: "Read and change settings of the current profile",
-		Long: `Settings are stored per profile in config.yaml. Keys: api_url, output.
-Precedence is flag, then environment, then profile, then default: 'legion help environment'.`,
-		Example: `  legion config list
+		Long: `Settings are stored per profile in config.yaml. Keys: ` + keys + `.
+Precedence is flag, then environment, then profile, then default: 'legion help environment'.
+'legion auth status' shows everything in effect; 'legion profile list' shows the profiles.`,
+		Example: `  legion config get api_url
   legion config set output json`,
 	})
-	list := &cobra.Command{
-		Use:     "list",
-		Short:   "Show every setting, its effective value and where it comes from",
-		Long:    "Show the effective value of each setting and its source: flag, env, profile or default. The API key is masked.",
-		Example: "  legion config list\n  legion config list -p staging -o json",
-		Args:    args(0, 0),
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			r, err := a.conf()
-			if err != nil {
-				return err
-			}
-			key := "(not set)"
-			if r.APIKey != "" {
-				key = short(r.APIKey)
-			}
-			rows := [][]string{
-				{"profile", r.Profile, r.Sources["profile"]},
-				{"api_url", r.APIURL, r.Sources["api_url"]},
-				{"output", r.Output, r.Sources["output"]},
-				{"api_key", key, r.Sources["api_key"]},
-			}
-			data := map[string]any{}
-			for _, row := range rows {
-				data[row[0]] = map[string]string{"value": row[1], "source": row[2]}
-			}
-			return a.emit(output.Result{Data: data, Table: &output.Table{Cols: []string{"KEY", "VALUE", "SOURCE"}, Rows: rows}})
-		},
-	}
 	get := &cobra.Command{
 		Use:     "get <key>",
 		Short:   "Print the effective value of one setting",
-		Long:    "Print one setting's effective value (after flags and environment). Keys: " + strings.Join(config.Keys, ", ") + ".",
+		Long:    "Print one setting's effective value (after flags and environment). Keys: " + keys + ".",
 		Example: "  legion config get api_url\n  legion config get output -p staging",
 		Args:    args(1, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
@@ -65,7 +39,7 @@ Precedence is flag, then environment, then profile, then default: 'legion help e
 				fmt.Fprintln(a.env.Stdout, r.Output)
 			default:
 				_, err := (&config.Profile{}).Get(as[0])
-				return usagef("legion config list", "%v", err)
+				return usagef("legion config get --help", "%v", err)
 			}
 			return nil
 		},
@@ -73,7 +47,7 @@ Precedence is flag, then environment, then profile, then default: 'legion help e
 	set := &cobra.Command{
 		Use:     "set <key> <value>",
 		Short:   "Change a setting of the current profile",
-		Long:    "Store a setting in the current profile (or the one chosen with -p). Keys: " + strings.Join(config.Keys, ", ") + ".",
+		Long:    "Store a setting in the current profile (or the one chosen with -p). Keys: " + keys + ".",
 		Example: "  legion config set output json\n  legion config set api_url https://api.staging.example -p staging",
 		Args:    args(2, 2),
 		RunE: func(cmd *cobra.Command, as []string) error {
@@ -87,38 +61,16 @@ Precedence is flag, then environment, then profile, then default: 'legion help e
 				}
 			}
 			if err := a.cfg.Ensure(r.Profile).Set(as[0], as[1]); err != nil {
-				return usagef("legion config list", "%v", err)
+				return usagef("legion config set --help", "%v", err)
 			}
-			if err := a.store().SaveConfig(a.cfg); err != nil {
+			if err := a.st.SaveConfig(a.cfg); err != nil {
 				return err
 			}
 			a.info("Set %s for profile %s.", as[0], r.Profile)
 			return nil
 		},
 	}
-	unset := &cobra.Command{
-		Use:     "unset <key>",
-		Short:   "Remove a setting from the current profile",
-		Long:    "Remove a setting so the default applies again.",
-		Example: "  legion config unset output\n  legion config unset api_url -p staging",
-		Args:    args(1, 1),
-		RunE: func(cmd *cobra.Command, as []string) error {
-			r, err := a.conf()
-			if err != nil {
-				return err
-			}
-			if _, err := (&config.Profile{}).Get(as[0]); err != nil {
-				return usagef("legion config list", "%v", err)
-			}
-			a.cfg.Ensure(r.Profile).Unset(as[0])
-			if err := a.store().SaveConfig(a.cfg); err != nil {
-				return err
-			}
-			a.info("Unset %s for profile %s.", as[0], r.Profile)
-			return nil
-		},
-	}
-	cmd.AddCommand(list, get, set, unset)
+	cmd.AddCommand(get, set)
 	return cmd
 }
 
@@ -135,7 +87,7 @@ switch between accounts or environments. Select one with 'legion profile use',
 	list := &cobra.Command{
 		Use:     "list",
 		Short:   "List profiles",
-		Long:    "List the profiles in config.yaml and credentials.yaml. The current one is marked with *.",
+		Long:    "List the profiles in config.yaml and credentials.yaml. The one in use is marked with *.",
 		Example: "  legion profile list\n  legion profile list -o name",
 		Args:    args(0, 0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -143,27 +95,22 @@ switch between accounts or environments. Select one with 'legion profile use',
 			if err != nil {
 				return err
 			}
-			names := config.Names(a.cfg, a.creds)
-			var rows [][]string
-			for _, n := range names {
-				mark := ""
-				if n == r.Profile {
-					mark = "*"
-				}
-				var p config.Profile
-				if a.cfg.Profiles[n] != nil {
-					p = *a.cfg.Profiles[n]
-				}
-				login := "no"
-				if a.creds.Profiles[n] != nil && a.creds.Profiles[n].APIKey != "" {
-					login = "yes"
-				}
-				if p.APIURL == "" {
-					p.APIURL = config.DefaultAPIURL
-				}
-				rows = append(rows, []string{mark, n, p.APIURL, login})
-			}
-			return a.emit(output.Result{Data: names, Names: names, Table: &output.Table{Cols: []string{"", "PROFILE", "API URL", "LOGGED IN"}, Rows: rows}})
+			res := listResult(config.Names(a.cfg, a.creds), []string{"", "PROFILE", "API URL", "LOGGED IN"}, nil,
+				func(n string) string { return n },
+				func(n string) []string {
+					mark, url, login := "", config.DefaultAPIURL, "no"
+					if n == r.Profile {
+						mark = "*"
+					}
+					if p := a.cfg.Profiles[n]; p != nil && p.APIURL != "" {
+						url = p.APIURL
+					}
+					if c := a.creds.Profiles[n]; c != nil && c.APIKey != "" {
+						login = "yes"
+					}
+					return []string{mark, n, url, login}
+				})
+			return a.emit(res)
 		},
 	}
 	create := &cobra.Command{
@@ -186,15 +133,14 @@ switch between accounts or environments. Select one with 'legion profile use',
 				}
 			}
 			if a.flagOut != "" {
-				if _, err := output.Parse(a.flagOut); err != nil {
+				if err := p.Set("output", a.flagOut); err != nil {
 					return usagef("legion profile create --help", "%v", err)
 				}
-				p.Output = a.flagOut
 			}
 			if a.cfg.CurrentProfile == "" {
 				a.cfg.CurrentProfile = as[0]
 			}
-			if err := a.store().SaveConfig(a.cfg); err != nil {
+			if err := a.st.SaveConfig(a.cfg); err != nil {
 				return err
 			}
 			a.info("Created profile %s.", as[0])
@@ -217,25 +163,10 @@ switch between accounts or environments. Select one with 'legion profile use',
 			}
 			a.cfg.Ensure(as[0])
 			a.cfg.CurrentProfile = as[0]
-			if err := a.store().SaveConfig(a.cfg); err != nil {
+			if err := a.st.SaveConfig(a.cfg); err != nil {
 				return err
 			}
 			a.info("Now using profile %s.", as[0])
-			return nil
-		},
-	}
-	current := &cobra.Command{
-		Use:     "current",
-		Short:   "Print the profile in use",
-		Long:    "Print the profile in effect: -p, then LEGION_PROFILE, then the one set with 'legion profile use'.",
-		Example: "  legion profile current\n  LEGION_PROFILE=ci legion profile current",
-		Args:    args(0, 0),
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			r, err := a.conf()
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(a.env.Stdout, r.Profile)
 			return nil
 		},
 	}
@@ -260,17 +191,17 @@ switch between accounts or environments. Select one with 'legion profile use',
 			if a.cfg.CurrentProfile == as[0] {
 				a.cfg.CurrentProfile = ""
 			}
-			if err := a.store().SaveCreds(a.creds); err != nil {
+			if err := a.st.SaveCreds(a.creds); err != nil {
 				return err
 			}
-			if err := a.store().SaveConfig(a.cfg); err != nil {
+			if err := a.st.SaveConfig(a.cfg); err != nil {
 				return err
 			}
 			a.info("Deleted profile %s.", as[0])
 			return nil
 		},
 	}
-	cmd.AddCommand(list, create, use, current, del)
+	cmd.AddCommand(list, create, use, del)
 	return cmd
 }
 

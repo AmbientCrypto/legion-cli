@@ -36,6 +36,7 @@ type harness struct {
 	dir      string // LEGION_CONFIG_DIR
 	home     string
 	stdin    string
+	stdinR   io.Reader // overrides stdin
 	tty      bool
 	secret   string
 	noKey    bool
@@ -140,12 +141,16 @@ func (h *harness) run(args ...string) (string, string, int) {
 	for k, v := range h.env {
 		env[k] = v
 	}
+	var in io.Reader = strings.NewReader(h.stdin)
+	if h.stdinR != nil {
+		in = h.stdinR
+	}
 	e := Env{
 		Ctx:   h.ctx,
-		Stdin: strings.NewReader(h.stdin), Stdout: &out, Stderr: &errb,
+		Stdin: in, Stdout: &out, Stderr: &errb,
 		Getenv:   func(k string) string { return env[k] },
 		StdinTTY: h.tty, StdoutTTY: false, StderrTTY: h.tty,
-		ReadSecret:  func() (string, error) { return h.secret, nil },
+		ReadSecret:  func(context.Context) (string, error) { return h.secret, nil },
 		OpenBrowser: func(u string) error { h.opened = append(h.opened, u); return nil },
 		LookPath:    func(s string) (string, error) { return "/usr/bin/" + s, nil },
 		Exec: func(path string, argv []string) error {

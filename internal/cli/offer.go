@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/AmbientCrypto/legion-controller/api"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/AmbientCrypto/legion-cli/internal/output"
 )
@@ -21,10 +23,9 @@ func (a *app) offerCmd() *cobra.Command {
   legion offer get amber-falcon`,
 	})
 	var (
-		models                          []string
+		models, countries               []string
 		minGPUs, maxLatency, limit      int
 		maxPrice, region, catalog, sort string
-		countries                       []string
 	)
 	list := &cobra.Command{
 		Use:   "list",
@@ -41,14 +42,9 @@ hardware, -o name for host names. --catalog shows only hosts that can run that s
 			if err != nil {
 				return err
 			}
+			// The API only matches a GPU model exactly, so --gpu-model is matched
+			// here, as a case-insensitive substring, over every offer.
 			p := &api.ListOffersParams{}
-			switch len(models) {
-			case 0:
-			case 1:
-				p.GpuModel = &models[0]
-			default:
-				p.GpuModels = &models
-			}
 			if minGPUs > 0 {
 				p.MinGpus = &minGPUs
 			}
@@ -74,20 +70,40 @@ hardware, -o name for host names. --catalog shows only hosts that can run that s
 			if sort != "" {
 				p.Sort = ptr(api.OfferSort(sort))
 			}
-			offers, err := a.listOffers(a.ctx(cmd), c, p, limit)
+			fetch := limit
+			if len(models) > 0 {
+				fetch = 1000
+			}
+			offers, err := a.listOffers(a.ctx(cmd), c, p, fetch)
 			if err != nil {
 				return err
 			}
+			if len(models) > 0 {
+				offers = filterModels(offers, models)
+			}
+			if limit > 0 && len(offers) > limit {
+				offers = offers[:limit]
+			}
 			if len(offers) == 0 {
-				a.info("No offers match. Loosen a filter, for example --max-price or --min-gpus.")
+				var applied []string
+				cmd.Flags().Visit(func(f *pflag.Flag) {
+					if f.Name != "limit" {
+						applied = append(applied, "--"+f.Name+" "+strings.Trim(f.Value.String(), "[]"))
+					}
+				})
+				if len(applied) == 0 {
+					a.info("No offers are listed right now.")
+				} else {
+					a.info("No offers match (filters: %s). Try without them: legion offer list", strings.Join(applied, ", "))
+				}
 			} else {
 				a.info("Rent one: legion rental create --offer <host> --catalog <id>")
 			}
-			return a.emit(output.Result{Data: offers, Names: offerNames(offers), Table: offerTable(offers)})
+			return a.emit(offerResult(offers))
 		},
 	}
 	f := list.Flags()
-	f.StringArrayVar(&models, "gpu-model", nil, "exact GPU model, e.g. \"NVIDIA GeForce RTX 4090\" (repeatable)")
+	f.StringArrayVar(&models, "gpu-model", nil, "GPU model, a case-insensitive part of its name, e.g. \"rtx 4090\" (repeatable)")
 	f.IntVar(&minGPUs, "min-gpus", 0, "at least this many free GPUs")
 	f.StringVar(&maxPrice, "max-price", "", "most per GPU-hour in dollars, e.g. 2.50")
 	f.StringVar(&region, "region", "", "reference region for latency: us-east-1, us-west-2, eu-central-1, ap-northeast-1, ap-southeast-1")
@@ -112,74 +128,70 @@ hardware, -o name for host names. --catalog shows only hosts that can run that s
 			if err != nil {
 				return err
 			}
-			return a.emit(output.Result{Data: o, Names: []string{o.HostName}, Table: offerTable([]api.Offer{*o}), Human: func(w io.Writer) { offerDetail(w, *o) }})
+			res := offerResult([]api.Offer{*o})
+			res.Data, res.Human = o, func(w io.Writer) { offerDetail(w, *o) }
+			return a.emit(res)
 		},
 	}
 	cmd.AddCommand(list, get)
 	return cmd
 }
 
-func offerNames(os []api.Offer) []string {
-	n := make([]string, len(os))
-	for i, o := range os {
-		n[i] = o.HostName
+// filterModels keeps offers whose GPU model contains any of the given texts.
+func filterModels(offers []api.Offer, models []string) []api.Offer {
+	var keep []api.Offer
+	for _, o := range offers {
+		for _, m := range models {
+			if strings.Contains(strings.ToLower(o.GpuModel), strings.ToLower(strings.TrimSpace(m))) {
+				keep = append(keep, o)
+				break
+			}
+		}
 	}
-	return n
+	return keep
 }
 
-func offerTable(os []api.Offer) *output.Table {
-	t := &output.Table{Cols: []string{"HOST", "GPU", "FREE/TOTAL", "VRAM", "PRICE/GPU-HR"}, Wide: []string{"HOST ID", "COUNTRY", "CPU/GPU", "RAM/GPU", "DISK/GPU", "DRIVER"}}
-	for _, o := range os {
-		t.Rows = append(t.Rows, []string{o.HostName, o.GpuModel, fmt.Sprintf("%d/%d", o.GpusFree, o.GpuCount), fmt.Sprintf("%d GiB", o.GpuMemoryMib/1024),
-			output.Money(o.PricePerGpuHour.AmountMinor, string(o.PricePerGpuHour.Currency)),
-			o.HostId.String(), ptrOr(o.Country, ""), fmt.Sprint(o.PerGpu.CpuCores), output.Bytes(o.PerGpu.MemoryMib << 20), fmt.Sprintf("%d GiB", o.PerGpu.DiskGib), ptrOr(o.DriverVersion, "")})
-	}
-	return t
+func offerResult(os []api.Offer) output.Result {
+	return listResult(os, []string{"HOST", "GPU", "FREE/TOTAL", "VRAM", "PRICE/GPU-HR"}, []string{"HOST ID", "COUNTRY", "CPU/GPU", "RAM/GPU", "DISK/GPU", "DRIVER"},
+		func(o api.Offer) string { return o.HostName },
+		func(o api.Offer) []string {
+			return []string{o.HostName, o.GpuModel, fmt.Sprintf("%d/%d", o.GpusFree, o.GpuCount), fmt.Sprintf("%d GiB", o.GpuMemoryMib/1024), signed(api.SignedMoney(o.PricePerGpuHour)),
+				o.HostId.String(), ptrOr(o.Country, ""), fmt.Sprint(o.PerGpu.CpuCores), output.Bytes(o.PerGpu.MemoryMib << 20), fmt.Sprintf("%d GiB", o.PerGpu.DiskGib), ptrOr(o.DriverVersion, "")}
+		})
 }
 
 func offerDetail(w io.Writer, o api.Offer) {
 	cur := string(o.PricePerGpuHour.Currency)
-	fmt.Fprintf(w, "Host:       %s (%s)\nGPU:        %d x %s, %d GiB each, %d free\n", o.HostName, o.HostId, o.GpuCount, o.GpuModel, o.GpuMemoryMib/1024, o.GpusFree)
+	fmt.Fprintf(w, "Host:       %s (%s)\nGPU:        %d x %s, %d GiB each, %d free\n", san(o.HostName), o.HostId, o.GpuCount, san(o.GpuModel), o.GpuMemoryMib/1024, o.GpusFree)
 	fmt.Fprintf(w, "Price:      %s per GPU-hour\n", output.Money(o.PricePerGpuHour.AmountMinor, cur))
 	if o.StoragePricePerGibMonth != nil {
 		fmt.Fprintf(w, "Storage:    %s per GiB-month while stopped\n", output.Money(o.StoragePricePerGibMonth.AmountMinor, cur))
 	}
 	fmt.Fprintf(w, "Per GPU:    %d CPU cores, %s RAM, %d GiB disk\n", o.PerGpu.CpuCores, output.Bytes(o.PerGpu.MemoryMib<<20), o.PerGpu.DiskGib)
 	if o.Country != nil {
-		fmt.Fprintf(w, "Country:    %s\n", *o.Country)
+		fmt.Fprintf(w, "Country:    %s\n", san(*o.Country))
 	}
 	if o.DriverVersion != nil {
-		fmt.Fprintf(w, "Driver:     %s\n", *o.DriverVersion)
+		fmt.Fprintf(w, "Driver:     %s\n", san(*o.DriverVersion))
 	}
-	fmt.Fprintf(w, "Rent:       legion rental create --offer %s --catalog <id>\n", o.HostName)
+	fmt.Fprintf(w, "Rent:       legion rental create --offer %s --catalog <id>\n", san(o.HostName))
 }
 
-// listOffers pages through listOffers until max offers are collected.
+// listOffers reads up to max offers (default 50).
 func (a *app) listOffers(ctx context.Context, c *api.ClientWithResponses, p *api.ListOffersParams, max int) ([]api.Offer, error) {
 	if max <= 0 {
 		max = 50
 	}
-	page := min(max, 100)
-	p.Limit = &page
-	var all []api.Offer
-	var cur *string
-	for len(all) < max {
-		p.Cursor = cur
+	return collect(max, func(cur *string, n int) ([]api.Offer, *string, error) {
+		p.Cursor, p.Limit = cur, &n
 		r, err := c.ListOffersWithResponse(ctx, p)
 		if err := a.ok(r, err); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		all = append(all, r.JSON200.Items...)
-		if r.JSON200.NextCursor == nil || *r.JSON200.NextCursor == "" {
-			break
+		pg, err := need(r.JSON200)
+		if err != nil {
+			return nil, nil, err
 		}
-		cur = r.JSON200.NextCursor
-	}
-	if len(all) > max {
-		all = all[:max]
-	}
-	if all == nil {
-		all = []api.Offer{}
-	}
-	return all, nil
+		return pg.Items, pg.NextCursor, nil
+	})
 }

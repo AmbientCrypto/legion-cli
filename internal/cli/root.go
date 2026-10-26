@@ -23,12 +23,15 @@ start a rental, SSH in, and stop billing when you are done.
 
 Quickstart:
   legion auth login                     # paste an API key (scope: full)
-  legion offer list --gpu-model "RTX 4090"
+  legion offer list --gpu-model "RTX 4090"      # case-insensitive substring of the model name
   legion rental create --offer <host-id> --catalog <id>
   legion ssh <rental>                   # connect;  legion rental stop <rental>  to stop billing
 
 Settings come from flags, then environment, then the profile, then defaults:
 see 'legion help environment'. Exit codes: 'legion help exit-codes'.`
+
+// Root is the command tree without a running app: for docs generation.
+func Root() *cobra.Command { return (&app{}).root() }
 
 func (a *app) root() *cobra.Command {
 	root := &cobra.Command{
@@ -39,8 +42,16 @@ func (a *app) root() *cobra.Command {
 		SilenceErrors: true,
 		Args:          cobra.ArbitraryArgs,
 		RunE:          func(cmd *cobra.Command, args []string) error { return a.unknown(cmd, args) },
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Reject a bad -o before anything is sent: `rental create -o bogus`
+		// must not bill.
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			a.cmdPath = strings.TrimPrefix(cmd.CommandPath(), "legion ")
+			switch strings.Fields(a.cmdPath + " ")[0] {
+			case "config", "profile", "help", "completion", "__complete", "version":
+				return nil
+			}
+			_, err := a.format()
+			return err
 		},
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
@@ -77,7 +88,7 @@ func (a *app) root() *cobra.Command {
 	add(grpStart, a.authCmd(), a.whoamiCmd(), a.offerCmd(), a.catalogCmd(), ssh)
 	add(grpCompute, a.rentalCmd())
 	add(grpAccount, a.sshKeyCmd(), a.billingCmd(), a.apiKeyCmd())
-	add(grpOther, a.configCmd(), a.profileCmd(), a.versionCmd(), a.completionCmd(), a.docsCmd())
+	add(grpOther, a.configCmd(), a.profileCmd(), a.versionCmd(), a.completionCmd())
 	root.AddCommand(topic("environment", "How flags, environment variables and profiles combine", environmentHelp))
 	root.AddCommand(topic("exit-codes", "What legion's exit codes mean", exitCodesHelp))
 	a.wireCompletions(root)
@@ -170,17 +181,20 @@ const environmentHelp = `Settings are resolved in this order, first match wins:
   3. the selected profile (config.yaml / credentials.yaml)
   4. built-in default
 
-  Setting      Flag           Environment       Profile key   Default
-  profile      -p/--profile   LEGION_PROFILE    current       default
-  API URL      --api-url      LEGION_API_URL    api_url       https://api.legion.ambient.xyz
-  output       -o/--output    LEGION_OUTPUT     output        table
-  API key      (none)         LEGION_API_KEY    credentials   (log in with: legion auth login)
+  Setting      Flag           Environment       Profile key      Default
+  profile      -p/--profile   LEGION_PROFILE    current_profile  default
+  API URL      --api-url      LEGION_API_URL    api_url          https://api.legion.ambient.xyz
+  output       -o/--output    LEGION_OUTPUT     output           table
+  API key      (none)         LEGION_API_KEY    credentials.yaml (log in with: legion auth login)
+
+The API URL must be https (http only for localhost, 127.0.0.1 and [::1]).
+See the effective values with 'legion auth status' and 'legion profile list'.
 
 The API key has no flag so it never appears in the process list.
 
-Files live in $LEGION_CONFIG_DIR, else your user config directory
-(for example ~/.config/legion):
-  config.yaml        profiles: api_url, output
+Files live in $LEGION_CONFIG_DIR, else $XDG_CONFIG_HOME/legion, else your user
+config directory (for example ~/.config/legion):
+  config.yaml        current_profile and, per profile, api_url and output
   credentials.yaml   API keys, mode 0600 (the directory is 0700)
 
 Colour is off with --no-color, NO_COLOR, TERM=dumb or when output is not a terminal.
@@ -189,9 +203,11 @@ Progress and prompts go to stderr, results to stdout.`
 const exitCodesHelp = `legion exits with:
 
     0  success
-    1  error (the API or the network failed, or anything not listed below)
-    2  usage error (bad flag, missing argument, nothing to confirm with and no --yes)
-    3  authentication or permission failed (not logged in, bad or under-scoped API key)
+    1  error (the API or the network failed, the account is suspended or a feature is
+       turned off for it, or anything not listed below)
+    2  usage error (bad flag, missing argument, a request the API rejected as invalid,
+       nothing to confirm with and no --yes)
+    3  authentication failed (not logged in, bad, expired or under-scoped API key)
     4  not found (rental, offer, key, backup ...)
     5  conflict or price changed (the host's price rose above --max-price, GPUs just taken)
     6  insufficient credit (check: legion billing balance)

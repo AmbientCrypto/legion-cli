@@ -73,7 +73,7 @@ func TestErrorShape(t *testing.T) {
 	if c != 3 {
 		t.Fatal(c)
 	}
-	contains(t, "stderr", e, "Error: bad token", "Code: unauthorized", "Hint: legion auth login")
+	contains(t, "stderr", e, "Error: Your API key is invalid, expired or revoked.", "Code: unauthorized", "Hint: legion auth login")
 }
 
 func TestDescribeMapping(t *testing.T) {
@@ -92,7 +92,7 @@ func TestDescribeMapping(t *testing.T) {
 		{"notfound rental", &client.Error{Status: 404, Code: "not_found"}, "rental get", 4, "legion rental list", ""},
 		{"notfound offer", &client.Error{Status: 404, Code: "not_found"}, "offer get", 4, "legion offer list", ""},
 		{"notfound sshkey", &client.Error{Status: 404, Code: "not_found"}, "ssh-key remove", 4, "legion ssh-key list", ""},
-		{"validation", &client.Error{Status: 400, Code: "invalid_request", Detail: "gpu_count: must be >= 1"}, "rental create", 1, "legion rental create --help", ""},
+		{"validation", &client.Error{Status: 400, Code: "invalid_request", Detail: "gpu_count: must be >= 1"}, "rental create", 2, "legion rental create --help", ""},
 		{"gpus", &client.Error{Status: 409, Code: "gpus_unavailable"}, "rental create", 5, "legion offer list", ""},
 		{"rate", &client.Error{Status: 429, Code: "rate_limited"}, "offer list", 1, "Wait", ""},
 	}
@@ -147,7 +147,7 @@ func TestAuthLoginRejectsBadToken(t *testing.T) {
 	if c != 3 {
 		t.Fatal(c)
 	}
-	contains(t, "stderr", e, "invalid API key")
+	contains(t, "stderr", e, "invalid, expired or revoked")
 	if _, err := os.Stat(filepath.Join(h.dir, "credentials.yaml")); err == nil {
 		t.Fatal("bad token was saved")
 	}
@@ -235,20 +235,13 @@ func TestConfigCommands(t *testing.T) {
 	if strings.TrimSpace(out) != "json" {
 		t.Fatalf("get: %q", out)
 	}
-	out, _ = h.mustRun("config", "list")
-	contains(t, "list", out, "output", "json", "profile", "api_url", "default")
-	h.mustRun("config", "unset", "output")
-	out, _ = h.mustRun("config", "get", "output")
-	if strings.TrimSpace(out) != "table" {
-		t.Fatalf("after unset: %q", out)
-	}
-	_, e, c := h.run("config", "set", "api_url", "nonsense")
-	if c != 2 {
+	if _, e, c := h.run("config", "set", "api_url", "nonsense"); c != 2 {
 		t.Fatal(c, e)
 	}
-	_, _, c = h.run("config", "get", "bogus")
-	if c != 2 {
-		t.Fatal(c)
+	for _, key := range []string{"bogus", "api_key"} { // api_key is not a setting: auth status shows it
+		if _, _, c := h.run("config", "get", key); c != 2 {
+			t.Fatalf("get %s = %d", key, c)
+		}
 	}
 }
 
@@ -257,23 +250,21 @@ func TestProfileCommands(t *testing.T) {
 	h.mustRun("profile", "create", "staging", "--api-url", "https://staging.example")
 	h.mustRun("profile", "create", "prod")
 	out, _ := h.mustRun("profile", "list")
-	contains(t, "list", out, "staging", "prod", "https://staging.example")
-	h.mustRun("profile", "use", "staging")
-	out, _ = h.mustRun("profile", "current")
-	if strings.TrimSpace(out) != "staging" {
-		t.Fatal(out)
-	}
+	contains(t, "list", out, "staging", "prod", "https://staging.example", "*  staging")
+	h.mustRun("profile", "use", "prod")
+	out, _ = h.mustRun("profile", "list")
+	contains(t, "current marked", out, "*  prod")
 	_, _, c := h.run("profile", "use", "ghost")
 	if c != 4 {
 		t.Fatalf("use unknown = %d", c)
 	}
 	_, _, c = h.run("profile", "delete", "staging")
 	if c != 2 {
-		t.Fatalf("delete current without --yes = %d", c)
+		t.Fatalf("delete without --yes = %d", c)
 	}
-	h.mustRun("profile", "delete", "prod", "--yes")
+	h.mustRun("profile", "delete", "staging", "--yes")
 	out, _ = h.mustRun("profile", "list", "-o", "name")
-	if strings.TrimSpace(out) != "staging" {
+	if strings.TrimSpace(out) != "prod" {
 		t.Fatalf("names: %q", out)
 	}
 }

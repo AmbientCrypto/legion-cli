@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -17,7 +18,7 @@ const gatewayUser = "legion"
 var (
 	nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,61}[a-z0-9]$`)
 	hostRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$`)
-	pathRE = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./~-]+$`)
+	pathRE = regexp.MustCompile(`^[A-Za-z0-9_@+=:,./~-]+$`)
 )
 
 // sshEndpoint checks the pieces that go into an ssh command line: they come
@@ -60,6 +61,15 @@ func sshArgv(r api.Rental, identity string) ([]string, error) {
 	return []string{"-i", identity, "-o", "IdentitiesOnly=yes", "-o", pin, "-o", "ProxyCommand=" + proxy, dest}, nil
 }
 
+// hostKey is the SHA256 fingerprint of the gateway's host key from the API,
+// cleaned for display; empty when the controller does not publish one.
+func hostKey(r *api.Rental) string {
+	if r.Ssh == nil || r.Ssh.HostKeyFingerprint == nil {
+		return ""
+	}
+	return san(*r.Ssh.HostKeyFingerprint)
+}
+
 func shellJoin(argv []string) string {
 	q := make([]string, len(argv))
 	for i, s := range argv {
@@ -98,40 +108,38 @@ ssh-config' prints an ~/.ssh/config block so plain 'ssh <rental>' works, and so 
 			if len(as) > 1 {
 				return usagef("legion ssh --help", "too many arguments before --: %q", strings.Join(as[1:], " "))
 			}
-			c, err := a.api()
-			if err != nil {
-				return err
-			}
-			r, err := a.pickRental(a.ctx(cmd), c, as)
-			if err != nil {
-				return err
-			}
-			switch r.State {
-			case api.RentalStateStopped, api.RentalStateStopping:
-				return &cliError{Msg: fmt.Sprintf("%s is %s", r.Name, r.State), Code: "rental_not_running", Hint: "legion rental start " + r.Name, Exit: client.ExitError}
-			case api.RentalStateFailed, api.RentalStateDeleted, api.RentalStateDeleting:
-				return &cliError{Msg: fmt.Sprintf("%s is %s", r.Name, r.State), Code: "rental_not_running", Hint: "legion rental list", Exit: client.ExitError}
-			}
-			if r.State != api.RentalStateRunning || r.Ssh == nil {
-				a.info("Waiting for %s to be running...", r.Name)
-				if r, err = a.waitFor(a.ctx(cmd), c, r.Id, "running", waitTimeout, true); err != nil {
+			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
+				switch r.State {
+				case api.RentalStateStopped, api.RentalStateStopping:
+					return &cliError{Msg: fmt.Sprintf("%s is %s", r.Name, r.State), Code: "rental_not_running", Hint: "legion rental start " + r.Name, Exit: client.ExitError}
+				case api.RentalStateFailed, api.RentalStateDeleted, api.RentalStateDeleting:
+					return &cliError{Msg: fmt.Sprintf("%s is %s", r.Name, r.State), Code: "rental_not_running", Hint: "legion rental list", Exit: client.ExitError}
+				}
+				var err error
+				if r.State != api.RentalStateRunning || r.Ssh == nil {
+					a.info("Waiting for %s to be running...", r.Name)
+					if r, err = a.waitFor(ctx, c, r.Id, "running", waitTimeout, true); err != nil {
+						return err
+					}
+				}
+				argv, err := sshArgv(*r, identity)
+				if err != nil {
 					return err
 				}
-			}
-			argv, err := sshArgv(*r, identity)
-			if err != nil {
-				return err
-			}
-			argv = append(argv, remote...)
-			if printOnly {
-				fmt.Fprintln(a.env.Stdout, shellJoin(append([]string{"ssh"}, argv...)))
-				return nil
-			}
-			path, err := a.env.LookPath("ssh")
-			if err != nil {
-				return errorf("legion ssh "+r.Name+" --print", "the ssh program was not found on your PATH; install OpenSSH, or run the command from --print yourself")
-			}
-			return a.env.Exec(path, append([]string{"ssh"}, argv...))
+				argv = append(argv, remote...)
+				if fp := hostKey(r); fp != "" {
+					a.info("Host key should be %s - ssh will ask you to confirm it on first connect.", fp)
+				}
+				if printOnly {
+					fmt.Fprintln(a.env.Stdout, shellJoin(append([]string{"ssh"}, argv...)))
+					return nil
+				}
+				path, err := a.env.LookPath("ssh")
+				if err != nil {
+					return errorf("legion ssh "+r.Name+" --print", "the ssh program was not found on your PATH; install OpenSSH, or run the command from --print yourself")
+				}
+				return a.env.Exec(path, append([]string{"ssh"}, argv...))
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&printOnly, "print", false, "print the ssh command instead of running it")
@@ -154,29 +162,26 @@ scp and rsync. Append them yourself, for example:  legion rental ssh-config <ren
   legion rental ssh-config quiet-river-7k2f --identity ~/.ssh/id_ed25519 >> ~/.ssh/config`,
 		Args: args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			c, err := a.api()
-			if err != nil {
-				return err
-			}
-			r, err := a.pickRental(a.ctx(cmd), c, as)
-			if err != nil {
-				return err
-			}
-			host, port, err := sshEndpoint(*r)
-			if err != nil {
-				return err
-			}
-			if err := checkIdentity(identity); err != nil {
-				return err
-			}
-			id := ""
-			if identity != "" {
-				id = "  IdentityFile " + identity + "\n  IdentitiesOnly yes\n"
-			}
-			fmt.Fprintf(a.env.Stdout, "Host %[1]s-gateway\n  HostName %[2]s\n  Port %[3]d\n  User %[4]s\n%[5]s\nHost %[1]s\n  HostName %[1]s\n  User root\n  HostKeyAlias %[1]s\n  ProxyJump %[1]s-gateway\n%[5]s  ServerAliveInterval 60\n",
-				r.Name, host, port, gatewayUser, id)
-			a.info("Append this to ~/.ssh/config, then connect with: ssh %s", r.Name)
-			return nil
+			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
+				host, port, err := sshEndpoint(*r)
+				if err != nil {
+					return err
+				}
+				if err := checkIdentity(identity); err != nil {
+					return err
+				}
+				id := ""
+				if identity != "" {
+					id = "  IdentityFile " + identity + "\n  IdentitiesOnly yes\n"
+				}
+				if fp := hostKey(r); fp != "" {
+					fmt.Fprintf(a.env.Stdout, "# Gateway host key: %s (ssh asks you to confirm it on first connect)\n", fp)
+				}
+				fmt.Fprintf(a.env.Stdout, "Host %[1]s-gateway\n  HostName %[2]s\n  Port %[3]d\n  User %[4]s\n%[5]s\nHost %[1]s\n  HostName %[1]s\n  User root\n  HostKeyAlias %[1]s\n  ProxyJump %[1]s-gateway\n%[5]s  ServerAliveInterval 60\n",
+					r.Name, host, port, gatewayUser, id)
+				a.info("Append this to ~/.ssh/config, then connect with: ssh %s", r.Name)
+				return nil
+			})
 		},
 	}
 	cmd.Flags().StringVarP(&identity, "identity", "i", "", "private key to use (path like ~/.ssh/id_ed25519)")

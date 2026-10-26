@@ -312,7 +312,8 @@ func TestRentalSSHConfig(t *testing.T) {
 	h := newHarness(t)
 	h.rentals()
 	out, _ := h.mustRun("rental", "ssh-config", "quiet-river-7k2f", "--identity", "~/.ssh/id_ed25519")
-	want := `Host quiet-river-7k2f-gateway
+	want := `# Gateway host key: SHA256:abc (ssh asks you to confirm it on first connect)
+Host quiet-river-7k2f-gateway
   HostName ssh.legion.example
   Port 2222
   User legion
@@ -365,14 +366,14 @@ func TestRentalIngress(t *testing.T) {
 	h.reply("DELETE /v1/rentals/"+id+"/ingress-rules/"+uidS(80), 204, nil)
 	out, _ := h.mustRun("rental", "ingress", "list", "quiet-river-7k2f")
 	contains(t, "list", out, "8000", "https://quiet-river-7k2f.ambi.run")
-	_, errs := h.mustRun("rental", "ingress", "add", "quiet-river-7k2f", "--port", "8000", "--source", "203.0.113.0/24", "--description", "api")
+	_, errs := h.mustRun("rental", "ingress", "add", "quiet-river-7k2f", "--port", "8000", "--yes", "--source", "203.0.113.0/24", "--description", "api")
 	c := h.last("POST", "/v1/rentals/"+id+"/ingress-rules")
 	req := body[api.CreateIngressRuleRequest](t, c)
 	if req.Port != 8000 || req.Protocol != "http" || len(req.Sources) != 1 || req.Sources[0] != "203.0.113.0/24" || c.Header.Get("Idempotency-Key") == "" {
 		t.Fatalf("%+v", req)
 	}
 	contains(t, "add", errs, "https://quiet-river-7k2f.ambi.run")
-	_, _, code := h.run("rental", "ingress", "add", "quiet-river-7k2f")
+	_, _, code := h.run("rental", "ingress", "add", "quiet-river-7k2f", "--yes")
 	if code != 2 {
 		t.Fatalf("missing --port: %d", code)
 	}

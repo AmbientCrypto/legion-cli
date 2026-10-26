@@ -14,7 +14,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	"github.com/AmbientCrypto/legion-cli/internal/client"
 	"github.com/AmbientCrypto/legion-cli/internal/output"
 )
 
@@ -37,13 +36,18 @@ type Preview struct {
 	CatalogID      string          `json:"catalog_id,omitempty"`
 	SSHKey         string          `json:"ssh_key"`
 	SSHFingerprint string          `json:"ssh_key_fingerprint,omitempty"`
+	gpusDefaulted  bool
 }
 
-func (p Preview) write(w io.Writer) {
+func (p Preview) write(w io.Writer, title string) {
 	cur := string(p.PricePerGPUHr.Currency)
-	fmt.Fprintf(w, "Rental preview\n")
-	fmt.Fprintf(w, "  Host:      %s (%s)\n", p.HostName, p.HostID)
-	fmt.Fprintf(w, "  GPUs:      %d x %s, %d GiB each\n", p.GPUCount, p.GPUModel, p.GPUMemoryMiB/1024)
+	fmt.Fprintf(w, "%s\n", title)
+	fmt.Fprintf(w, "  Host:      %s (%s)\n", san(p.HostName), p.HostID)
+	fmt.Fprintf(w, "  GPUs:      %d", p.GPUCount)
+	if p.gpusDefaulted {
+		fmt.Fprint(w, " (change with --gpus N)")
+	}
+	fmt.Fprintf(w, "\n  GPU model: %s, %d GiB each\n", san(p.GPUModel), p.GPUMemoryMiB/1024)
 	fmt.Fprintf(w, "  Price:     %s per GPU-hour = %s per hour", output.Money(p.PricePerGPUHr.AmountMinor, cur), output.Money(p.HourlyPrice.AmountMinor, cur))
 	if p.MaxPricePerGPU.AmountMinor != p.PricePerGPUHr.AmountMinor {
 		fmt.Fprintf(w, " (you accept up to %s per GPU-hour)", output.Money(p.MaxPricePerGPU.AmountMinor, cur))
@@ -59,11 +63,9 @@ func (p Preview) write(w io.Writer) {
 	case p.HourlyPrice.AmountMinor > 0:
 		fmt.Fprintf(w, " (about %s at this rate)", output.Duration(p.Balance.AmountMinor*3600/p.HourlyPrice.AmountMinor))
 	}
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "  Image:     %s\n", p.Image)
-	fmt.Fprintf(w, "  SSH key:   %s", p.SSHKey)
+	fmt.Fprintf(w, "\n  Image:     %s\n  SSH key:   %s", san(p.Image), san(p.SSHKey))
 	if p.SSHFingerprint != "" {
-		fmt.Fprintf(w, " (%s)", p.SSHFingerprint)
+		fmt.Fprintf(w, " (%s)", san(p.SSHFingerprint))
 	}
 	fmt.Fprintln(w)
 }
@@ -114,18 +116,25 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 			if err != nil {
 				return err
 			}
+			cur := offer.PricePerGpuHour
+			if maxCents > 0 && maxCents < cur.AmountMinor {
+				return usagef("Raise --max-price, or drop it to accept the current price.", "--max-price %s is below %s's current price of %s per GPU-hour, so the rental would be refused",
+					output.Money(maxCents, string(cur.Currency)), san(offer.HostName), output.Money(cur.AmountMinor, string(cur.Currency)))
+			}
 			req := api.CreateRentalRequest{HostId: offer.HostId, GpuCount: gpus}
 			pv := Preview{HostID: offer.HostId.String(), HostName: offer.HostName, GPUModel: offer.GpuModel, GPUMemoryMiB: offer.GpuMemoryMib,
-				PricePerGPUHr: offer.PricePerGpuHour, StoragePerGiB: offer.StoragePricePerGibMonth}
+				PricePerGPUHr: cur, StoragePerGiB: offer.StoragePricePerGibMonth}
 
 			if err := a.chooseImage(ctx, c, offer, image, catalogID, &req, &pv); err != nil {
 				return err
 			}
+			pv.gpusDefaulted = gpus == 0
 			if req.GpuCount == 0 {
 				req.GpuCount = 1
 			}
-			if req.GpuCount > offer.GpusFree {
-				return usagef("legion offer get "+offer.HostId.String(), "%s has only %d GPUs free, you asked for %d", offer.HostName, offer.GpusFree, req.GpuCount)
+			// An on-demand rental can also take GPUs held by interruptible ones.
+			if avail := offer.GpusFree + ptrOr(offer.GpusInterruptible, 0); req.GpuCount > avail {
+				return usagef("legion offer get "+offer.HostId.String(), "%s has only %d GPUs available, you asked for %d", san(offer.HostName), avail, req.GpuCount)
 			}
 			key, err := a.chooseSSHKey(ctx, c, sshKeyArg)
 			if err != nil {
@@ -137,22 +146,47 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 			if err != nil {
 				return err
 			}
-			max := offer.PricePerGpuHour
+			max := cur
 			if maxCents > 0 {
-				max = api.Money{AmountMinor: maxCents, Currency: offer.PricePerGpuHour.Currency}
+				max = api.Money{AmountMinor: maxCents, Currency: cur.Currency}
 			}
 			req.MaxPricePerGpuHour = &max
 			pv.GPUCount, pv.Image = req.GpuCount, req.Image
-			pv.HourlyPrice = api.Money{AmountMinor: offer.PricePerGpuHour.AmountMinor * int64(req.GpuCount), Currency: offer.PricePerGpuHour.Currency}
+			pv.HourlyPrice = api.Money{AmountMinor: cur.AmountMinor * int64(req.GpuCount), Currency: cur.Currency}
 			pv.MaxPricePerGPU, pv.Balance, pv.HasCredit = max, bal.Balance, bal.HasCredit
 
 			if dryRun {
-				return a.emit(output.Result{Data: pv, Names: []string{pv.HostName}, Human: pv.write})
+				cmdline := []string{"legion", "rental", "create", "--offer", offer.HostName}
+				if pv.CatalogID != "" {
+					cmdline = append(cmdline, "--catalog", pv.CatalogID)
+				} else {
+					cmdline = append(cmdline, "--image", req.Image)
+				}
+				cmdline = append(cmdline, "--gpus", fmt.Sprint(req.GpuCount))
+				if maxPrice != "" {
+					cmdline = append(cmdline, "--max-price", maxPrice)
+				}
+				if sshKeyArg != "" {
+					cmdline = append(cmdline, "--ssh-key", sshKeyArg)
+				}
+				a.info("Dry run: nothing rented. To rent: %s --yes", shellJoin(cmdline))
+				return a.emit(output.Result{Data: pv, Names: []string{pv.HostName}, Human: func(w io.Writer) { pv.write(w, "Rental preview") }})
+			}
+			ask := "refusing to start billing without confirmation: this rental will cost " + output.Money(pv.HourlyPrice.AmountMinor, string(cur.Currency)) + " per hour"
+			if !a.yes && !a.interactive() {
+				err := a.confirm("", ask)
+				var ce *cliError
+				if errors.As(err, &ce) && !a.quiet {
+					var b strings.Builder
+					pv.write(&b, "Preview (nothing rented):")
+					ce.After = b.String()
+				}
+				return err
 			}
 			if !a.quiet {
-				pv.write(a.env.Stderr)
+				pv.write(a.env.Stderr, "Rental preview")
 			}
-			if err := a.confirm("Rent these GPUs and start billing?", "refusing to start billing without confirmation: this rental will cost "+output.Money(pv.HourlyPrice.AmountMinor, string(pv.HourlyPrice.Currency))+" per hour"); err != nil {
+			if err := a.confirm("Rent these GPUs and start billing?", ask); err != nil {
 				return err
 			}
 
@@ -164,7 +198,10 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 				}
 				return err
 			}
-			r := resp.JSON201
+			r, err := need(resp.JSON201)
+			if err != nil {
+				return err
+			}
 			a.info("Created rental %s (%s).", r.Name, r.Id)
 			if !wait {
 				a.info("It is starting. Wait for it: legion rental wait %s", r.Name)
@@ -172,7 +209,7 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 				a.info("Stop billing: legion rental stop %s", r.Name)
 				return a.emit(a.one(*r))
 			}
-			final, err := a.waitFor(ctx, c, r.Id, "running", waitTimeout, true)
+			final, err := a.waitRunning(ctx, c, r, waitTimeout)
 			if err != nil {
 				return err
 			}
@@ -206,7 +243,7 @@ func (a *app) balance(ctx context.Context, c *api.ClientWithResponses) (*api.Bil
 	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
-	return r.JSON200, nil
+	return need(r.JSON200)
 }
 
 // chooseOffer resolves --offer (id or host name), or picks one on a terminal.
@@ -227,7 +264,7 @@ func (a *app) chooseOffer(ctx context.Context, c *api.ClientWithResponses, arg, 
 	}
 	labels := make([]string, len(offers))
 	for i, o := range offers {
-		labels[i] = fmt.Sprintf("%-18s %dx %-18s %d free  %s/GPU-hr", o.HostName, o.GpuCount, o.GpuModel, o.GpusFree, output.Money(o.PricePerGpuHour.AmountMinor, string(o.PricePerGpuHour.Currency)))
+		labels[i] = san(fmt.Sprintf("%-18s %dx %-18s %d free  %s/GPU-hr", o.HostName, o.GpuCount, o.GpuModel, o.GpusFree, output.Money(o.PricePerGpuHour.AmountMinor, string(o.PricePerGpuHour.Currency))))
 	}
 	i, err := a.pickOne("Which host?", labels, "", "")
 	if err != nil {
@@ -254,10 +291,17 @@ func (a *app) findOffer(ctx context.Context, c *api.ClientWithResponses, arg str
 			hits = append(hits, o)
 		}
 	}
-	if len(hits) != 1 {
-		return nil, notFoundf("legion offer list", "no single offer matches host %q", arg)
+	switch len(hits) {
+	case 0:
+		return nil, notFoundf("legion offer list", "no offer matches host %q", arg)
+	case 1:
+		return a.getOffer(ctx, c, hits[0].HostId)
 	}
-	return a.getOffer(ctx, c, hits[0].HostId)
+	names := make([]string, len(hits))
+	for i, o := range hits {
+		names[i] = o.HostName
+	}
+	return nil, usagef("Use a longer prefix or the full name.", "%q is ambiguous: it matches %s", arg, strings.Join(names, ", "))
 }
 
 func (a *app) getOffer(ctx context.Context, c *api.ClientWithResponses, id uuid.UUID) (*api.Offer, error) {
@@ -265,7 +309,11 @@ func (a *app) getOffer(ctx context.Context, c *api.ClientWithResponses, id uuid.
 	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
-	return &r.JSON200.Offer, nil
+	d, err := need(r.JSON200)
+	if err != nil {
+		return nil, err
+	}
+	return &d.Offer, nil
 }
 
 // chooseImage fills req.Image (and serve for a premade model) from --image,
@@ -315,7 +363,7 @@ func (a *app) chooseImage(ctx context.Context, c *api.ClientWithResponses, offer
 				why = append(why, inc.Detail)
 			}
 		}
-		return errorf("legion offer list --catalog "+e.Id, "%s cannot run on %s: %s", e.Id, offer.HostName, strings.Join(why, "; "))
+		return errorf("legion offer list --catalog "+e.Id, "%s cannot run on %s: %s", e.Id, san(offer.HostName), strings.Join(why, "; "))
 	}
 	req.Image, pv.CatalogID = e.Reference, e.Id
 	if req.GpuCount == 0 && e.MinGpus != nil {
@@ -335,7 +383,11 @@ func (a *app) catalogFor(ctx context.Context, c *api.ClientWithResponses, host *
 	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
-	return r.JSON200.Entries, nil
+	p, err := need(r.JSON200)
+	if err != nil {
+		return nil, err
+	}
+	return p.Entries, nil
 }
 
 type chosenKey struct{ pub, label, fingerprint string }
@@ -343,14 +395,10 @@ type chosenKey struct{ pub, label, fingerprint string }
 // chooseSSHKey picks the key the rental authorizes: --ssh-key (saved key or
 // .pub file), else the saved keys, else ~/.ssh/id_ed25519.pub.
 func (a *app) chooseSSHKey(ctx context.Context, c *api.ClientWithResponses, arg string) (chosenKey, error) {
-	r, err := c.ListSshKeysWithResponse(ctx)
+	saved, err := a.sshKeys(ctx, c)
 	if err != nil {
-		return chosenKey{}, a.netErr(err)
-	}
-	if err := client.Check(r.HTTPResponse, r.Body); err != nil {
 		return chosenKey{}, err
 	}
-	saved := r.JSON200.Items
 	from := func(k api.SshKey) chosenKey { return chosenKey{k.PublicKey, k.Label, k.Fingerprint} }
 	if arg != "" {
 		for _, k := range saved {

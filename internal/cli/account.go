@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -50,16 +51,14 @@ func (a *app) sshKeyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t := &output.Table{Cols: []string{"LABEL", "TYPE", "FINGERPRINT", "CREATED"}, Wide: []string{"ID"}}
-			names := make([]string, len(keys))
-			for i, k := range keys {
-				names[i] = k.Label
-				t.Rows = append(t.Rows, []string{k.Label, string(k.KeyType), k.Fingerprint, ts(k.CreatedAt), k.Id.String()})
-			}
 			if len(keys) == 0 {
 				a.info("No saved keys. Add one: legion ssh-key add")
 			}
-			return a.emit(output.Result{Data: keys, Names: names, Table: t})
+			return a.emit(listResult(keys, []string{"LABEL", "TYPE", "FINGERPRINT", "CREATED"}, []string{"ID"},
+				func(k api.SshKey) string { return k.Label },
+				func(k api.SshKey) []string {
+					return []string{k.Label, string(k.KeyType), k.Fingerprint, ts(k.CreatedAt), k.Id.String()}
+				}))
 		},
 	}
 	var file, label string
@@ -97,10 +96,15 @@ file is refused. Without --label the key's comment, then the file name, is the l
 			if err := a.ok(r, err); err != nil {
 				return err
 			}
-			k := r.JSON201
-			a.info("Saved SSH key %s (%s).", k.Label, k.Fingerprint)
-			a.info("Next: legion rental create --ssh-key %s", k.Label)
-			return a.emit(output.Result{Data: k, Names: []string{k.Label}, Table: &output.Table{Cols: []string{"LABEL", "TYPE", "FINGERPRINT"}, Rows: [][]string{{k.Label, string(k.KeyType), k.Fingerprint}}}})
+			k, err := need(r.JSON201)
+			if err != nil {
+				return err
+			}
+			a.info("Saved SSH key %s (%s).", san(k.Label), san(k.Fingerprint))
+			a.info("Next: legion rental create --ssh-key %s", san(k.Label))
+			res := listResult([]api.SshKey{*k}, []string{"LABEL", "TYPE", "FINGERPRINT"}, nil, func(k api.SshKey) string { return k.Label },
+				func(k api.SshKey) []string { return []string{k.Label, string(k.KeyType), k.Fingerprint} })
+			return a.emit(detail(res, k))
 		},
 	}
 	add.Flags().StringVar(&file, "file", "", "public key file (default ~/.ssh/id_ed25519.pub)")
@@ -143,7 +147,25 @@ func (a *app) sshKeys(ctx context.Context, c *api.ClientWithResponses) ([]api.Ss
 	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
-	return r.JSON200.Items, nil
+	p, err := need(r.JSON200)
+	if err != nil {
+		return nil, err
+	}
+	return p.Items, nil
+}
+
+func (a *app) apiKeys(ctx context.Context, c *api.ClientWithResponses) ([]api.ApiKey, error) {
+	return collect(0, func(cur *string, n int) ([]api.ApiKey, *string, error) {
+		r, err := c.ListApiKeysWithResponse(ctx, &api.ListApiKeysParams{Cursor: cur, Limit: &n})
+		if err := a.ok(r, err); err != nil {
+			return nil, nil, err
+		}
+		p, err := need(r.JSON200)
+		if err != nil {
+			return nil, nil, err
+		}
+		return p.Items, p.NextCursor, nil
+	})
 }
 
 // ---- api-key ----
@@ -168,23 +190,15 @@ func (a *app) apiKeyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			keys, err := listAll(func(cur *string) ([]api.ApiKey, *string, error) {
-				r, err := c.ListApiKeysWithResponse(a.ctx(cmd), &api.ListApiKeysParams{Cursor: cur, Limit: ptr(100)})
-				if err := a.ok(r, err); err != nil {
-					return nil, nil, err
-				}
-				return r.JSON200.Items, r.JSON200.NextCursor, nil
-			})
+			keys, err := a.apiKeys(a.ctx(cmd), c)
 			if err != nil {
 				return err
 			}
-			t := &output.Table{Cols: []string{"NAME", "PREFIX", "SCOPE", "CREATED", "LAST USED"}, Wide: []string{"EXPIRES", "ID"}}
-			names := make([]string, len(keys))
-			for i, k := range keys {
-				names[i] = k.Name
-				t.Rows = append(t.Rows, []string{k.Name, k.Prefix, string(k.Scope), ts(k.CreatedAt), tsp(k.LastUsedAt), tsp(k.ExpiresAt), k.Id.String()})
-			}
-			return a.emit(output.Result{Data: keys, Names: names, Table: t})
+			return a.emit(listResult(keys, []string{"NAME", "PREFIX", "SCOPE", "CREATED", "LAST USED"}, []string{"EXPIRES", "ID"},
+				func(k api.ApiKey) string { return k.Name },
+				func(k api.ApiKey) []string {
+					return []string{k.Name, k.Prefix, string(k.Scope), ts(k.CreatedAt), tsp(k.LastUsedAt), tsp(k.ExpiresAt), k.Id.String()}
+				}))
 		},
 	}
 	var scope string
@@ -215,11 +229,14 @@ store it somewhere safe. Use scope full for the CLI and scripts.`,
 			if err := a.ok(r, err); err != nil {
 				return err
 			}
-			k := r.JSON201
+			k, err := need(r.JSON201)
+			if err != nil {
+				return err
+			}
 			a.info("Warning: this is the only time the secret is shown. Copy it now.")
 			a.info("Use it: echo <key> | legion auth login --with-token   (or export LEGION_API_KEY)")
 			return a.emit(output.Result{Data: k, Names: []string{k.Token}, Human: func(w io.Writer) {
-				fmt.Fprintf(w, "Name:    %s\nScope:   %s\nPrefix:  %s\nSecret:  %s\n", k.ApiKey.Name, k.ApiKey.Scope, k.ApiKey.Prefix, k.Token)
+				fmt.Fprintf(w, "Name:    %s\nScope:   %s\nPrefix:  %s\nSecret:  %s\n", san(k.ApiKey.Name), k.ApiKey.Scope, san(k.ApiKey.Prefix), k.Token)
 			}})
 		},
 	}
@@ -236,12 +253,12 @@ store it somewhere safe. Use scope full for the CLI and scripts.`,
 			if err != nil {
 				return err
 			}
-			rr, err := c.ListApiKeysWithResponse(a.ctx(cmd), &api.ListApiKeysParams{Limit: ptr(100)})
-			if err := a.ok(rr, err); err != nil {
+			all, err := a.apiKeys(a.ctx(cmd), c)
+			if err != nil {
 				return err
 			}
 			var hits []api.ApiKey
-			for _, k := range rr.JSON200.Items {
+			for _, k := range all {
 				if k.Id.String() == as[0] || k.Name == as[0] || k.Prefix == as[0] {
 					hits = append(hits, k)
 				}
@@ -313,12 +330,16 @@ func (a *app) billingCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			items, err := pages(limit, func(cur *string, n int) ([]api.RentalCharges, *string, error) {
+			items, err := collect(limit, func(cur *string, n int) ([]api.RentalCharges, *string, error) {
 				r, err := c.ListRentalChargesWithResponse(a.ctx(cmd), &api.ListRentalChargesParams{Cursor: cur, Limit: &n})
 				if err := a.ok(r, err); err != nil {
 					return nil, nil, err
 				}
-				return r.JSON200.Items, r.JSON200.NextCursor, nil
+				p, err := need(r.JSON200)
+				if err != nil {
+					return nil, nil, err
+				}
+				return p.Items, p.NextCursor, nil
 			})
 			if err != nil {
 				return err
@@ -365,13 +386,17 @@ func (a *app) billingCmd() *cobra.Command {
 				}
 				p.RentalId = &r.Id
 			}
-			items, err := pages(limit, func(cur *string, n int) ([]api.BillingActivityItem, *string, error) {
+			items, err := collect(limit, func(cur *string, n int) ([]api.BillingActivityItem, *string, error) {
 				p.Cursor, p.Limit = cur, &n
 				r, err := c.ListBillingActivityWithResponse(a.ctx(cmd), &p)
 				if err := a.ok(r, err); err != nil {
 					return nil, nil, err
 				}
-				return r.JSON200.Items, r.JSON200.NextCursor, nil
+				pg, err := need(r.JSON200)
+				if err != nil {
+					return nil, nil, err
+				}
+				return pg.Items, pg.NextCursor, nil
 			})
 			if err != nil {
 				return err
@@ -410,51 +435,39 @@ func (a *app) billingCmd() *cobra.Command {
 				return err
 			}
 			p := api.ListLedgerEntriesParams{Account: ptr(api.LedgerAccount(account))}
-			items, err := pages(limit, func(cur *string, n int) ([]api.LedgerEntry, *string, error) {
+			// The API lists oldest first: read every page, then show the newest.
+			items, err := collect(0, func(cur *string, n int) ([]api.LedgerEntry, *string, error) {
 				p.Cursor, p.Limit = cur, &n
 				r, err := c.ListLedgerEntriesWithResponse(a.ctx(cmd), &p)
 				if err := a.ok(r, err); err != nil {
 					return nil, nil, err
 				}
-				return r.JSON200.Items, r.JSON200.NextCursor, nil
+				pg, err := need(r.JSON200)
+				if err != nil {
+					return nil, nil, err
+				}
+				return pg.Items, pg.NextCursor, nil
 			})
 			if err != nil {
 				return err
 			}
-			t := &output.Table{Cols: []string{"TIME", "CAUSE", "AMOUNT", "REASON"}, Wide: []string{"RENTAL ID", "ID"}}
-			for _, e := range items {
-				rid := ""
-				if e.RentalId != nil {
-					rid = e.RentalId.String()
-				}
-				t.Rows = append(t.Rows, []string{ts(e.OccurredAt), string(e.Cause), signed(e.Amount), ptrOr(e.Reason, ""), rid, e.Id})
+			sort.SliceStable(items, func(i, j int) bool { return items[i].OccurredAt.After(items[j].OccurredAt) })
+			if limit > 0 && len(items) > limit {
+				items = items[:limit]
 			}
-			return a.emit(output.Result{Data: items, Table: t})
+			return a.emit(listResult(items, []string{"TIME", "CAUSE", "AMOUNT", "REASON"}, []string{"RENTAL ID", "ID"},
+				func(e api.LedgerEntry) string { return e.Id },
+				func(e api.LedgerEntry) []string {
+					rid := ""
+					if e.RentalId != nil {
+						rid = e.RentalId.String()
+					}
+					return []string{ts(e.OccurredAt), string(e.Cause), signed(e.Amount), ptrOr(e.Reason, ""), rid, e.Id}
+				}))
 		},
 	}
 	ledger.Flags().StringVar(&account, "account", "balance", "balance or earnings")
 	ledger.Flags().IntVar(&limit, "limit", 50, "most rows")
 	cmd.AddCommand(balance, charges, activity, ledger)
 	return cmd
-}
-
-// pages collects up to max items from a cursor-paged list.
-func pages[T any](max int, fetch func(cur *string, n int) ([]T, *string, error)) ([]T, error) {
-	if max <= 0 {
-		max = 50
-	}
-	all := []T{}
-	var cur *string
-	for len(all) < max {
-		items, next, err := fetch(cur, min(max-len(all), 100))
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, items...)
-		if next == nil || *next == "" {
-			break
-		}
-		cur = next
-	}
-	return all, nil
 }

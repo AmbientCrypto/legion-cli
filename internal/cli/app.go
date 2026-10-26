@@ -32,7 +32,7 @@ type Env struct {
 	Stdout, Stderr                 io.Writer
 	Getenv                         func(string) string
 	StdinTTY, StdoutTTY, StderrTTY bool
-	ReadSecret                     func() (string, error) // hidden input from the terminal
+	ReadSecret                     func(context.Context) (string, error) // hidden input from the terminal
 	OpenBrowser                    func(url string) error
 	LookPath                       func(string) (string, error)
 	Exec                           func(path string, argv []string) error // replaces the process on unix
@@ -46,16 +46,36 @@ func DefaultEnv(ctx context.Context, version, commit, date string) Env {
 	home, _ := os.UserHomeDir()
 	return Env{
 		Ctx: ctx, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv,
-		StdinTTY:  term.IsTerminal(int(os.Stdin.Fd())),
-		StdoutTTY: term.IsTerminal(int(os.Stdout.Fd())),
-		StderrTTY: term.IsTerminal(int(os.Stderr.Fd())),
-		ReadSecret: func() (string, error) {
-			b, err := term.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Fprintln(os.Stderr)
-			return string(b), err
-		},
+		StdinTTY:    term.IsTerminal(int(os.Stdin.Fd())),
+		StdoutTTY:   term.IsTerminal(int(os.Stdout.Fd())),
+		StderrTTY:   term.IsTerminal(int(os.Stderr.Fd())),
+		ReadSecret:  readSecret,
 		OpenBrowser: openBrowser, LookPath: exec.LookPath, Exec: execReplace,
 		Home: home, Poll: 3 * time.Second, Version: version, Commit: commit, Date: date,
+	}
+}
+
+// readSecret reads hidden input but gives up on Ctrl-C, putting the terminal
+// back the way it was.
+func readSecret(ctx context.Context) (string, error) {
+	fd := int(os.Stdin.Fd())
+	saved, _ := term.GetState(fd)
+	type res struct {
+		s   string
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() { b, err := term.ReadPassword(fd); ch <- res{string(b), err} }()
+	select {
+	case r := <-ch:
+		fmt.Fprintln(os.Stderr)
+		return r.s, r.err
+	case <-ctx.Done():
+		if saved != nil {
+			_ = term.Restore(fd, saved)
+		}
+		fmt.Fprintln(os.Stderr)
+		return "", ctx.Err()
 	}
 }
 
@@ -78,6 +98,7 @@ type app struct {
 	cmdPath                       string
 
 	prompt   *ui.Prompter
+	st       config.Store
 	cfg      *config.File
 	creds    *config.Credentials
 	resolved *config.Resolved
@@ -89,7 +110,7 @@ func Execute(env Env, args []string) int {
 		env.Ctx = context.Background()
 	}
 	a := &app{env: env}
-	a.prompt = &ui.Prompter{In: bufio.NewReader(env.Stdin), Out: env.Stderr}
+	a.prompt = &ui.Prompter{In: bufio.NewReader(env.Stdin), Out: env.Stderr, Ctx: env.Ctx}
 	root := a.root()
 	root.SetArgs(args)
 	root.SetOut(env.Stdout)
@@ -107,28 +128,29 @@ func Execute(env Env, args []string) int {
 	if d.Hint != "" {
 		fmt.Fprintf(env.Stderr, "%s %s\n", st.Bold("Hint:"), d.Hint)
 	}
+	if d.After != "" {
+		fmt.Fprint(env.Stderr, d.After)
+	}
 	return d.Exit
 }
 
 // ---- config and client plumbing ----
 
-func (a *app) store() config.Store {
-	dir, err := config.Dir(a.env.Getenv)
-	if err != nil {
-		dir = "."
-	}
-	return config.Store{Dir: dir, Warn: a.env.Stderr}
-}
-
+// load reads config and credentials once. Every command calls it (through
+// conf) before it touches a.st, a.cfg or a.creds.
 func (a *app) load() error {
 	if a.resolved != nil {
 		return nil
 	}
-	var err error
-	if a.cfg, err = a.store().LoadConfig(); err != nil {
+	dir, err := config.Dir(a.env.Getenv)
+	if err != nil {
 		return err
 	}
-	if a.creds, err = a.store().LoadCreds(); err != nil {
+	a.st = config.Store{Dir: dir, Warn: a.env.Stderr}
+	if a.cfg, err = a.st.LoadConfig(); err != nil {
+		return err
+	}
+	if a.creds, err = a.st.LoadCreds(); err != nil {
 		return err
 	}
 	r := config.Resolve(a.cfg, a.creds, config.Inputs{Profile: a.flagProfile, APIURL: a.flagURL, Output: a.flagOut, Getenv: a.env.Getenv})
@@ -148,6 +170,9 @@ func (a *app) newClient(url, key string) (*api.ClientWithResponses, error) {
 	var dbg io.Writer
 	if a.debug {
 		dbg = a.env.Stderr
+	}
+	if err := config.CheckAPIURL(url); err != nil {
+		return nil, usagef("legion config set api_url https://...", "%v", err)
 	}
 	return client.New(client.Options{BaseURL: url, Token: key, Version: a.env.Version, Debug: dbg, Timeout: a.timeout})
 }
@@ -196,7 +221,34 @@ func (a *app) emit(res output.Result) error {
 	if err != nil {
 		return err
 	}
-	return output.Write(a.env.Stdout, f, res)
+	err = output.Write(a.env.Stdout, f, res)
+	if errors.Is(err, output.ErrNoMatch) {
+		return errorf("", "%v", err)
+	}
+	return err
+}
+
+// need turns a missing answer body (204, empty 200) into an error instead of
+// a nil dereference.
+func need[T any](p *T) (*T, error) {
+	if p == nil {
+		return nil, errorf("Check the result with: legion rental list", "the API answered without the expected body")
+	}
+	return p, nil
+}
+
+// withRental resolves <rental> (id, name, prefix, or a picker) and runs fn.
+func (a *app) withRental(cmd *cobra.Command, as []string, fn func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error) error {
+	c, err := a.api()
+	if err != nil {
+		return err
+	}
+	ctx := a.ctx(cmd)
+	r, err := a.pickRental(ctx, c, as)
+	if err != nil {
+		return err
+	}
+	return fn(ctx, c, r)
 }
 
 // info prints a status line to stderr unless -q.
@@ -227,7 +279,10 @@ func (a *app) confirm(question, whatIfNot string) error {
 	if !a.interactive() {
 		return usagef("Add --yes to confirm without a prompt.", "%s", whatIfNot)
 	}
-	ok, _ := a.prompt.Confirm(question)
+	ok, err := a.prompt.Confirm(question)
+	if err != nil {
+		return err
+	}
 	if !ok {
 		return &cliError{Msg: "aborted", Exit: client.ExitError}
 	}
@@ -242,7 +297,11 @@ func (a *app) pickOne(label string, opts []string, missing, hint string) (int, e
 	if len(opts) == 0 {
 		return 0, errorf("", "nothing to choose from")
 	}
-	return a.prompt.Select(label, opts)
+	i, err := a.prompt.Select(label, opts)
+	if errors.Is(err, ui.ErrNoChoice) {
+		return 0, usagef(hint, "no valid choice given")
+	}
+	return i, err
 }
 
 func (a *app) ctx(cmd *cobra.Command) context.Context {
@@ -260,6 +319,9 @@ func short(s string) string {
 	return s[:8] + "…"
 }
 
+// san cleans API text before it reaches the terminal.
+func san(s string) string { return output.Sanitize(s) }
+
 func ptr[T any](v T) *T { return &v }
 
 func ptrOr[T any](p *T, def T) T {
@@ -269,22 +331,41 @@ func ptrOr[T any](p *T, def T) T {
 	return *p
 }
 
-// listAll follows next_cursor to the end.
-func listAll[T any](fetch func(cursor *string) ([]T, *string, error)) ([]T, error) {
-	var all []T
+// collect follows next_cursor until max items are read (max <= 0: all of
+// them). fetch gets the cursor and the page size to ask for.
+func collect[T any](max int, fetch func(cur *string, n int) ([]T, *string, error)) ([]T, error) {
+	all := []T{}
 	var cur *string
-	for i := 0; i < 1000; i++ {
-		items, next, err := fetch(cur)
+	for i := 0; i < 1000 && (max <= 0 || len(all) < max); i++ {
+		n := 100
+		if max > 0 {
+			n = min(max-len(all), 100)
+		}
+		items, next, err := fetch(cur, n)
 		if err != nil {
 			return nil, err
 		}
 		all = append(all, items...)
 		if next == nil || *next == "" {
-			return all, nil
+			break
 		}
 		cur = next
 	}
 	return all, nil
+}
+
+// listResult is the shared table builder: one row per item, names for -o name.
+func listResult[T any](items []T, cols, wide []string, name func(T) string, row func(T) []string) output.Result {
+	if items == nil {
+		items = []T{}
+	}
+	t := &output.Table{Cols: cols, Wide: wide}
+	names := make([]string, len(items))
+	for i, it := range items {
+		names[i] = name(it)
+		t.Rows = append(t.Rows, row(it))
+	}
+	return output.Result{Data: items, Names: names, Table: t}
 }
 
 // ok is the tail of every API call: res is the generated *XxxResult. It
