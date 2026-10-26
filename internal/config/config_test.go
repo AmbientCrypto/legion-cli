@@ -30,8 +30,8 @@ func TestResolvePrecedence(t *testing.T) {
 	c := &Credentials{Profiles: map[string]*Cred{"work": {APIKey: "lgn_work"}, "other": {APIKey: "lgn_other"}}}
 
 	tests := []struct {
-		name                          string
-		in                            Inputs
+		name                           string
+		in                             Inputs
 		profile, url, key, out, srcURL string
 	}{
 		{"defaults", Inputs{Getenv: env(nil)}, "work", "https://work.example", "lgn_work", "wide", "profile"},

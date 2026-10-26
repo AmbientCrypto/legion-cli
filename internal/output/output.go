@@ -182,7 +182,7 @@ func ParseDollars(s string) (int64, error) {
 	if err != nil || w < 0 {
 		return 0, fmt.Errorf("%q is not a dollar amount, for example 2.50", s)
 	}
-	f, err := strconv.ParseInt(or0((frac+"00")[:2]), 10, 64)
+	f, err := strconv.ParseInt(or0((frac + "00")[:2]), 10, 64)
 	if err != nil || f < 0 {
 		return 0, fmt.Errorf("%q is not a dollar amount, for example 2.50", s)
 	}
