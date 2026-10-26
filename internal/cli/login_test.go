@@ -66,7 +66,7 @@ func fakeSignIn(t *testing.T, h *harness, iss func(string) string) {
 		if err != nil {
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 }
 
@@ -138,7 +138,7 @@ func TestAuthLoginDeniedInTheBrowser(t *testing.T) {
 	})
 	h.browser = func(u string) {
 		if resp, err := http.Get(u); err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	}
 	_, e, c := h.run("auth", "login")
