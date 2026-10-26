@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/AmbientCrypto/legion-cli/main/scrip
 ## Quickstart (60 seconds)
 
 ```sh
-legion auth login                                   # opens Settings > API keys; create a key with scope "full" and paste it
+legion auth login                                   # opens your browser; approve "Legion CLI" and you are signed in
 legion offer list --gpu-model "RTX 4090"            # cheapest first, prices per GPU-hour
 legion rental create --offer amber-falcon --catalog pytorch --gpus 2   # preview, confirm, wait until running
 legion ssh quiet-river-7k2f                         # connect (add -- nvidia-smi to run one command)
@@ -29,6 +29,7 @@ legion rental stop quiet-river-7k2f                 # ends GPU billing, keeps th
 legion rental delete quiet-river-7k2f               # destroys the workspace for good
 ```
 
+- `auth login` saves an API key named `Legion CLI (<this computer>)` (scope full, 90 days); revoke it in Settings > API keys or with `legion auth logout`. On a remote machine with no local browser use `legion auth login --paste`; in CI pipe a key to `legion auth login --with-token` or set `LEGION_API_KEY`.
 - `rental create` shows a preview (host, GPUs, price per GPU-hour and per hour, balance, image, SSH key) and asks first. `--dry-run` stops there; `--async` does not wait. The price you saw is the most you pay (`--max-price` to allow more); if it rose, nothing is rented.
 - A `<rental>` is an id, a friendly name or any unique prefix. On a terminal, leave it out to pick from a list.
 - `legion rental ssh-config <rental>` prints an `~/.ssh/config` block so `ssh`, `scp` and `rsync` work.

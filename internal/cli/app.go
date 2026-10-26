@@ -34,6 +34,7 @@ type Env struct {
 	StdinTTY, StdoutTTY, StderrTTY bool
 	ReadSecret                     func(context.Context) (string, error) // hidden input from the terminal
 	OpenBrowser                    func(url string) error
+	Hostname                       func() (string, error) // names the key a browser sign-in makes
 	LookPath                       func(string) (string, error)
 	Exec                           func(path string, argv []string) error // replaces the process on unix
 	Home                           string
@@ -50,7 +51,7 @@ func DefaultEnv(ctx context.Context, version, commit, date string) Env {
 		StdoutTTY:   term.IsTerminal(int(os.Stdout.Fd())),
 		StderrTTY:   term.IsTerminal(int(os.Stderr.Fd())),
 		ReadSecret:  readSecret,
-		OpenBrowser: openBrowser, LookPath: exec.LookPath, Exec: execReplace,
+		OpenBrowser: openBrowser, Hostname: os.Hostname, LookPath: exec.LookPath, Exec: execReplace,
 		Home: home, Poll: 3 * time.Second, Version: version, Commit: commit, Date: date,
 	}
 }
