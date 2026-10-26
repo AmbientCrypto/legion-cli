@@ -15,7 +15,7 @@ $ legion rental stop quiet-river-7k2f
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/AmbientCrypto/legion-cli/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/AmbientCrypto/legion-cli/main/scripts/install.sh | bash
 ```
 
 `install.sh` detects your OS and CPU, downloads the release archive, verifies its sha256 against
@@ -23,11 +23,7 @@ curl -fsSL https://raw.githubusercontent.com/AmbientCrypto/legion-cli/main/scrip
 `LEGION_VERSION` to pin). On Windows, download the `.zip` from the releases page. Homebrew will
 follow once a public tap exists (see the commented `brews` block in `.goreleaser.yaml`).
 
-Check it worked with `legion version`. Until the releases are public, the installer and `go install`
-need read access to the `AmbientCrypto/legion-cli` repository (set `LEGION_GITHUB_TOKEN` for the installer).
-
-From source: `go install github.com/AmbientCrypto/legion-cli/cmd/legion@latest`
-(needs `GOPRIVATE=github.com/AmbientCrypto/*` while the API client module is private).
+Check it worked with `legion version`. Re-run the same command to upgrade.
 
 ## Quickstart
 

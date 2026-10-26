@@ -2,7 +2,7 @@
 # Install the legion CLI: detects OS and CPU, downloads the release archive from
 # GitHub, verifies its sha256 against checksums.txt and installs the binary.
 #
-#   curl -fsSL https://raw.githubusercontent.com/AmbientCrypto/legion-cli/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/AmbientCrypto/legion-cli/main/scripts/install.sh | bash
 #
 # Environment:
 #   LEGION_VERSION      version to install, e.g. 1.4.0 (default: latest release)

@@ -1,6 +1,6 @@
 # Release on a version tag: git tag v1.2.3 && git push origin v1.2.3.
 # GoReleaser builds darwin/linux/windows x amd64/arm64, the archives and
-# checksums.txt, and creates a DRAFT GitHub release; a human publishes it.
+# checksums.txt, and publishes the GitHub release that install.sh downloads.
 # Same module-access pattern as ci.yml: the token reaches git only on the
 # `go mod download` step; GoReleaser builds from the module cache.
 name: release
@@ -16,7 +16,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # create the draft release and upload assets
+      contents: write # publish the release and upload assets
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
