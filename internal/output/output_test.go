@@ -86,9 +86,18 @@ func TestJSONPath(t *testing.T) {
 	if got := render(t, "jsonpath=[0]", r); got != "{\"count\":1,\"name\":\"alpha\"}\n" {
 		t.Errorf("object: %q", got)
 	}
-	f, _ := Parse("jsonpath=$[")
-	if err := Write(&bytes.Buffer{}, f, r); err == nil {
-		t.Error("want bad expression error")
+	if _, err := Parse("jsonpath=$["); err == nil {
+		t.Error("a bad expression must be rejected by Parse, before any request")
+	}
+	f, _ := Parse("jsonpath=$.nothing")
+	if err := Write(&bytes.Buffer{}, f, r); err != ErrNoMatch {
+		t.Errorf("want ErrNoMatch, got %v", err)
+	}
+}
+
+func TestSanitize(t *testing.T) {
+	if got := Sanitize("a\x1b[2Jb\x07c\u009bd\x7fe\tf\ng"); got != "a[2Jbcde f g" {
+		t.Errorf("%q", got)
 	}
 }
 

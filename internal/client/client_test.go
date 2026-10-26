@@ -118,10 +118,32 @@ func TestExitCodes(t *testing.T) {
 		want   int
 	}{
 		{500, "", 1}, {401, "unauthorized", 3}, {401, "", 3}, {403, "api_key_scope", 3}, {404, "not_found", 4},
-		{409, "price_changed", 5}, {409, "gpus_unavailable", 5}, {402, "insufficient_credit", 6}, {400, "invalid_request", 1},
+		{409, "price_changed", 5}, {409, "gpus_unavailable", 5}, {402, "insufficient_credit", 6}, {400, "invalid_request", 2}, {403, "org_suspended", 1}, {403, "forbidden", 3},
 	} {
 		if got := (&Error{Status: tc.status, Code: tc.code}).ExitCode(); got != tc.want {
 			t.Errorf("%d %s: got %d want %d", tc.status, tc.code, got, tc.want)
 		}
+	}
+}
+
+func TestRedirectAndAuthStayOnBaseHost(t *testing.T) {
+	var leaked bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = leaked || r.Header.Get("Authorization") != ""
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/steal", http.StatusFound)
+	}))
+	defer srv.Close()
+	c, err := New(Options{BaseURL: srv.URL, Token: "lgn_secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.GetMeWithResponse(context.Background()); err == nil {
+		t.Fatal("cross-host redirect was followed")
+	}
+	if leaked {
+		t.Fatal("Authorization reached another host")
 	}
 }

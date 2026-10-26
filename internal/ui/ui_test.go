@@ -3,6 +3,9 @@ package ui
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +38,27 @@ func TestSelect(t *testing.T) {
 	p, _ = prompter("")
 	if _, err := p.Select("Pick", []string{"a"}); err == nil {
 		t.Fatal("EOF should error")
+	}
+	p, _ = prompter("\n")
+	if i, err := p.Select("Pick", []string{"a"}); err != nil || i != 0 {
+		t.Fatalf("Enter on one choice: %d %v", i, err)
+	}
+	p, _ = prompter("x\ny\nz\n1\n")
+	if _, err := p.Select("Pick", []string{"a", "b"}); !errors.Is(err, ErrNoChoice) {
+		t.Fatalf("want ErrNoChoice, got %v", err)
+	}
+}
+
+func TestAskReturnsOnCancel(t *testing.T) {
+	pr, _ := io.Pipe() // never written: a blocked read
+	ctx, cancel := context.WithCancel(context.Background())
+	p := &Prompter{In: bufio.NewReader(pr), Out: io.Discard, Ctx: ctx}
+	go func() { time.Sleep(20 * time.Millisecond); cancel() }()
+	if _, err := p.Ask("?"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v", err)
+	}
+	if ok, err := p.Confirm("?"); ok || !errors.Is(err, context.Canceled) {
+		t.Fatalf("confirm on cancelled ctx: %v %v", ok, err)
 	}
 }
 
