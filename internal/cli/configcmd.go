@@ -158,7 +158,10 @@ switch between accounts or environments. Select one with 'legion profile use',
 				if a.creds.Profiles[n] != nil && a.creds.Profiles[n].APIKey != "" {
 					login = "yes"
 				}
-				rows = append(rows, []string{mark, n, joinNonEmpty("", p.APIURL, map[bool]string{true: config.DefaultAPIURL}[p.APIURL == ""]), login})
+				if p.APIURL == "" {
+					p.APIURL = config.DefaultAPIURL
+				}
+				rows = append(rows, []string{mark, n, p.APIURL, login})
 			}
 			return a.emit(output.Result{Data: names, Names: names, Table: &output.Table{Cols: []string{"", "PROFILE", "API URL", "LOGGED IN"}, Rows: rows}})
 		},

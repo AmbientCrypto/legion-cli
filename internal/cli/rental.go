@@ -13,6 +13,7 @@ import (
 
 	"github.com/AmbientCrypto/legion-cli/internal/client"
 	"github.com/AmbientCrypto/legion-cli/internal/output"
+	"github.com/AmbientCrypto/legion-cli/internal/ui"
 )
 
 func (a *app) rentalCmd() *cobra.Command {
@@ -37,10 +38,7 @@ Leave the name out on a terminal to pick from a list.`,
 func (a *app) listRentals(ctx context.Context, c *api.ClientWithResponses) ([]api.Rental, error) {
 	return listAll(func(cur *string) ([]api.Rental, *string, error) {
 		r, err := c.ListRentalsWithResponse(ctx, &api.ListRentalsParams{Cursor: cur, Limit: ptr(100)})
-		if err != nil {
-			return nil, nil, a.netErr(err)
-		}
-		if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+		if err := a.ok(r, err); err != nil {
 			return nil, nil, err
 		}
 		return r.JSON200.Items, r.JSON200.NextCursor, nil
@@ -49,10 +47,7 @@ func (a *app) listRentals(ctx context.Context, c *api.ClientWithResponses) ([]ap
 
 func (a *app) getRental(ctx context.Context, c *api.ClientWithResponses, id api.RentalID) (*api.Rental, error) {
 	r, err := c.GetRentalWithResponse(ctx, id)
-	if err != nil {
-		return nil, a.netErr(err)
-	}
-	if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
 	return r.JSON200, nil
@@ -140,12 +135,19 @@ func rentalNames(rs []api.Rental) []string {
 	return n
 }
 
-func one(r api.Rental) output.Result {
-	return output.Result{Data: r, Names: []string{r.Name}, Table: rentalTable([]api.Rental{r}), Human: func(w io.Writer) { rentalDetail(w, r) }}
+func (a *app) one(r api.Rental) output.Result {
+	return output.Result{Data: r, Names: []string{r.Name}, Table: rentalTable([]api.Rental{r}), Human: func(w io.Writer) { rentalDetail(w, a.style(), r) }}
 }
 
-func rentalDetail(w io.Writer, r api.Rental) {
-	fmt.Fprintf(w, "Name:       %s\nID:         %s\nState:      %s\n", r.Name, r.Id, r.State)
+func rentalDetail(w io.Writer, st ui.Style, r api.Rental) {
+	state := string(r.State)
+	switch r.State {
+	case api.RentalStateRunning:
+		state = st.Green(state)
+	case api.RentalStateFailed:
+		state = st.Red(state)
+	}
+	fmt.Fprintf(w, "Name:       %s\nID:         %s\nState:      %s\n", st.Bold(r.Name), r.Id, state)
 	if r.FailureReason != nil {
 		fmt.Fprintf(w, "Failure:    %s\n", *r.FailureReason)
 	}
@@ -218,7 +220,7 @@ func (a *app) rentalGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.emit(one(*fresh))
+			return a.emit(a.one(*fresh))
 		},
 	}
 }
@@ -250,10 +252,7 @@ Start it again with: legion rental start. Waits until stopped unless --async.`,
 				return err
 			}
 			resp, err := c.StopRentalWithResponse(a.ctx(cmd), r.Id, &api.StopRentalParams{})
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			final := resp.JSON200
@@ -265,7 +264,7 @@ Start it again with: legion rental start. Waits until stopped unless --async.`,
 			a.info("Stopped %s: the workload is stopped and GPU billing has ended. The workspace is kept and billed for storage per GiB until deleted.", r.Name)
 			a.info("Resume: legion rental start %s", r.Name)
 			a.info("Destroy the workspace and end all billing: legion rental delete %s", r.Name)
-			return a.emit(one(*final))
+			return a.emit(a.one(*final))
 		},
 	}
 	cmd.Flags().BoolVar(&async, "async", false, "return without waiting for the rental to stop")
@@ -293,10 +292,7 @@ Needs credit and free GPUs on the host. Waits until running unless --async.`,
 				return err
 			}
 			resp, err := c.StartRentalWithResponse(a.ctx(cmd), r.Id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			final := resp.JSON200
@@ -310,7 +306,7 @@ Needs credit and free GPUs on the host. Waits until running unless --async.`,
 				a.info("Starting %s. Wait for it: legion rental wait %s", r.Name, r.Name)
 			}
 			a.info("Stop billing: legion rental stop %s", r.Name)
-			return a.emit(one(*final))
+			return a.emit(a.one(*final))
 		},
 	}
 	cmd.Flags().BoolVar(&async, "async", false, "return without waiting for the rental to run")
@@ -348,15 +344,12 @@ name to confirm; in scripts pass --yes.`,
 				}
 			}
 			resp, err := c.DeleteRentalWithResponse(a.ctx(cmd), r.Id, &api.DeleteRentalParams{})
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			a.info("Deleting %s: the workspace is being destroyed and billing has ended.", r.Name)
 			a.info("Check: legion rental list")
-			return a.emit(one(*resp.JSON200))
+			return a.emit(a.one(*resp.JSON200))
 		},
 	}
 }
@@ -389,7 +382,7 @@ Use it in scripts after 'legion rental create --async'.`,
 			if err != nil {
 				return err
 			}
-			return a.emit(one(*final))
+			return a.emit(a.one(*final))
 		},
 	}
 	cmd.Flags().StringVar(&forState, "for", "running", "state to wait for: running or stopped")
@@ -461,10 +454,7 @@ func (a *app) rentalChargesCmd() *cobra.Command {
 				return err
 			}
 			resp, err := c.GetRentalChargesWithResponse(a.ctx(cmd), r.Id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			ch := resp.JSON200
@@ -502,10 +492,7 @@ when you ask, never in 'rental get'.`,
 				return err
 			}
 			resp, err := c.GetRentalServeWithResponse(a.ctx(cmd), r.Id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			s := resp.JSON200

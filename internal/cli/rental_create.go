@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -156,10 +157,11 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 			}
 
 			resp, err := c.CreateRentalWithResponse(ctx, &api.CreateRentalParams{IdempotencyKey: uuid.NewString()}, req)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
+				var ce *cliError
+				if errors.As(err, &ce) && ce.Code == "network_error" {
+					ce.Hint = "The rental may have been created anyway. Check before retrying: legion rental list"
+				}
 				return err
 			}
 			r := resp.JSON201
@@ -168,7 +170,7 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 				a.info("It is starting. Wait for it: legion rental wait %s", r.Name)
 				a.info("Connect when running: legion ssh %s", r.Name)
 				a.info("Stop billing: legion rental stop %s", r.Name)
-				return a.emit(one(*r))
+				return a.emit(a.one(*r))
 			}
 			final, err := a.waitFor(ctx, c, r.Id, "running", waitTimeout, true)
 			if err != nil {
@@ -180,7 +182,7 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 				a.info("Model endpoint and key: legion rental serve %s", final.Name)
 			}
 			a.info("Stop billing: legion rental stop %s", final.Name)
-			return a.emit(one(*final))
+			return a.emit(a.one(*final))
 		},
 	}
 	f := cmd.Flags()
@@ -201,10 +203,7 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 
 func (a *app) balance(ctx context.Context, c *api.ClientWithResponses) (*api.BillingAccount, error) {
 	r, err := c.GetBillingAccountWithResponse(ctx)
-	if err != nil {
-		return nil, a.netErr(err)
-	}
-	if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
 	return r.JSON200, nil
@@ -263,10 +262,7 @@ func (a *app) findOffer(ctx context.Context, c *api.ClientWithResponses, arg str
 
 func (a *app) getOffer(ctx context.Context, c *api.ClientWithResponses, id uuid.UUID) (*api.Offer, error) {
 	r, err := c.GetOfferWithResponse(ctx, id)
-	if err != nil {
-		return nil, a.netErr(err)
-	}
-	if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
 	return &r.JSON200.Offer, nil
@@ -336,10 +332,7 @@ func (a *app) chooseImage(ctx context.Context, c *api.ClientWithResponses, offer
 
 func (a *app) catalogFor(ctx context.Context, c *api.ClientWithResponses, host *uuid.UUID) ([]api.CatalogEntry, error) {
 	r, err := c.ListCatalogWithResponse(ctx, &api.ListCatalogParams{HostId: host})
-	if err != nil {
-		return nil, a.netErr(err)
-	}
-	if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
 	return r.JSON200.Entries, nil

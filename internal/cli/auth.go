@@ -8,7 +8,6 @@ import (
 	"github.com/AmbientCrypto/legion-controller/api"
 	"github.com/spf13/cobra"
 
-	"github.com/AmbientCrypto/legion-cli/internal/client"
 	"github.com/AmbientCrypto/legion-cli/internal/config"
 	"github.com/AmbientCrypto/legion-cli/internal/output"
 )
@@ -181,10 +180,7 @@ func (a *app) whoami(cmd *cobra.Command, url, key string) (*api.Me, error) {
 		return nil, err
 	}
 	resp, err := c.GetMeWithResponse(a.ctx(cmd))
-	if err != nil {
-		return nil, a.netErr(err)
-	}
-	if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+	if err := a.ok(resp, err); err != nil {
 		return nil, err
 	}
 	return resp.JSON200, nil

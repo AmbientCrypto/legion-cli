@@ -77,9 +77,10 @@ func (a *app) root() *cobra.Command {
 	add(grpStart, a.authCmd(), a.whoamiCmd(), a.offerCmd(), a.catalogCmd(), ssh)
 	add(grpCompute, a.rentalCmd())
 	add(grpAccount, a.sshKeyCmd(), a.billingCmd(), a.apiKeyCmd())
-	add(grpOther, a.configCmd(), a.profileCmd(), a.versionCmd(), a.docsCmd())
+	add(grpOther, a.configCmd(), a.profileCmd(), a.versionCmd(), a.completionCmd(), a.docsCmd())
 	root.AddCommand(topic("environment", "How flags, environment variables and profiles combine", environmentHelp))
 	root.AddCommand(topic("exit-codes", "What legion's exit codes mean", exitCodesHelp))
+	a.wireCompletions(root)
 	return root
 }
 

@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	"github.com/AmbientCrypto/legion-cli/internal/client"
 	"github.com/AmbientCrypto/legion-cli/internal/output"
 )
 
@@ -40,10 +39,7 @@ limited to some source networks. SSH needs no rule.`,
 				return err
 			}
 			resp, err := c.GetRentalNetworkWithResponse(a.ctx(cmd), r.Id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			rules := resp.JSON200.Ingress.Rules
@@ -93,10 +89,7 @@ internet can reach it; add --source <cidr> (repeatable, up to 16) to limit it.`,
 				req.Description = &desc
 			}
 			resp, err := c.CreateIngressRuleWithResponse(a.ctx(cmd), r.Id, &api.CreateIngressRuleParams{IdempotencyKey: uuid.NewString()}, req)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			ru := resp.JSON201
@@ -132,10 +125,7 @@ internet can reach it; add --source <cidr> (repeatable, up to 16) to limit it.`,
 				return err
 			}
 			resp, err := c.DeleteIngressRuleWithResponse(a.ctx(cmd), r.Id, id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			a.info("Removed ingress rule %s.", id)
@@ -222,10 +212,7 @@ rental once the backup is ready.`,
 			}
 			key := uuid.NewString()
 			resp, err := c.CreateRentalBackupWithResponse(a.ctx(cmd), r.Id, &api.CreateRentalBackupParams{IdempotencyKey: &key}, body)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			b := resp.JSON202
@@ -259,10 +246,7 @@ rental once the backup is ready.`,
 				}
 				bs, err = listAll(func(cur *string) ([]api.Backup, *string, error) {
 					resp, err := c.ListRentalBackupsWithResponse(a.ctx(cmd), r.Id, &api.ListRentalBackupsParams{Cursor: cur, Limit: ptr(100)})
-					if err != nil {
-						return nil, nil, a.netErr(err)
-					}
-					if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+					if err := a.ok(resp, err); err != nil {
 						return nil, nil, err
 					}
 					return resp.JSON200.Items, resp.JSON200.NextCursor, nil
@@ -278,10 +262,7 @@ rental once the backup is ready.`,
 				bs, err = listAll(func(cur *string) ([]api.Backup, *string, error) {
 					p.Cursor = cur
 					resp, err := c.ListBackupsWithResponse(a.ctx(cmd), &p)
-					if err != nil {
-						return nil, nil, a.netErr(err)
-					}
-					if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+					if err := a.ok(resp, err); err != nil {
 						return nil, nil, err
 					}
 					return resp.JSON200.Items, resp.JSON200.NextCursor, nil
@@ -318,10 +299,7 @@ rental once the backup is ready.`,
 		"  legion rental backup get 6f1c2e3a-...\n  legion rental backup get 6f1c2e3a-... -o json",
 		func(cmd *cobra.Command, c *api.ClientWithResponses, id uuid.UUID) error {
 			r, err := c.GetBackupWithResponse(a.ctx(cmd), id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+			if err := a.ok(r, err); err != nil {
 				return err
 			}
 			if r.JSON200.State == api.BackupStateReady {
@@ -336,10 +314,7 @@ rental once the backup is ready.`,
 				return err
 			}
 			r, err := c.DeleteBackupWithResponse(a.ctx(cmd), id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+			if err := a.ok(r, err); err != nil {
 				return err
 			}
 			a.info("Deleted backup %s.", id)
@@ -349,10 +324,7 @@ rental once the backup is ready.`,
 		"  legion rental backup cancel 6f1c2e3a-...\n  legion rental backup cancel 6f1c2e3a-... -q",
 		func(cmd *cobra.Command, c *api.ClientWithResponses, id uuid.UUID) error {
 			r, err := c.CancelBackupWithResponse(a.ctx(cmd), id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+			if err := a.ok(r, err); err != nil {
 				return err
 			}
 			a.info("Cancelled backup %s.", id)
@@ -364,10 +336,7 @@ rental once the backup is ready.`,
 		func(cmd *cobra.Command, c *api.ClientWithResponses, id uuid.UUID) error {
 			key := uuid.NewString()
 			r, err := c.CreateBackupDownloadLinkWithResponse(a.ctx(cmd), id, &api.CreateBackupDownloadLinkParams{IdempotencyKey: &key})
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+			if err := a.ok(r, err); err != nil {
 				return err
 			}
 			l := r.JSON201
@@ -380,10 +349,7 @@ rental once the backup is ready.`,
 
 func (a *app) estimate(cmd *cobra.Command, c *api.ClientWithResponses, id api.RentalID, days *api.BackupRetentionDays) (*api.BackupEstimate, error) {
 	r, err := c.EstimateRentalBackupWithResponse(a.ctx(cmd), id, &api.EstimateRentalBackupParams{RetentionDays: days})
-	if err != nil {
-		return nil, a.netErr(err)
-	}
-	if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
 	return r.JSON200, nil
@@ -460,10 +426,7 @@ func (a *app) exportCmd() *cobra.Command {
 				return err
 			}
 			resp, err := c.CreateWorkspaceExportWithResponse(a.ctx(cmd), r.Id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			a.info("Export %s started. Follow it: legion rental export get %s %s", resp.JSON202.Id, r.Name, resp.JSON202.Id)
@@ -486,10 +449,7 @@ func (a *app) exportCmd() *cobra.Command {
 				return err
 			}
 			resp, err := c.ListWorkspaceExportsWithResponse(a.ctx(cmd), r.Id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			es := resp.JSON200.Items
@@ -533,10 +493,7 @@ func (a *app) exportCmd() *cobra.Command {
 		"  legion rental export get quiet-river-7k2f 6f1c...\n  legion rental export get quiet 6f1c... -o jsonpath=$.download_url",
 		func(cmd *cobra.Command, c *api.ClientWithResponses, r *api.Rental, id uuid.UUID) error {
 			resp, err := c.GetWorkspaceExportWithResponse(a.ctx(cmd), r.Id, id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			return a.emit(res([]api.WorkspaceExport{*resp.JSON200}))
@@ -545,10 +502,7 @@ func (a *app) exportCmd() *cobra.Command {
 		"  legion rental export cancel quiet-river-7k2f 6f1c...\n  legion rental export cancel quiet 6f1c... -q",
 		func(cmd *cobra.Command, c *api.ClientWithResponses, r *api.Rental, id uuid.UUID) error {
 			resp, err := c.CancelWorkspaceExportWithResponse(a.ctx(cmd), r.Id, id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(resp.HTTPResponse, resp.Body); err != nil {
+			if err := a.ok(resp, err); err != nil {
 				return err
 			}
 			a.info("Cancelled export %s.", id)

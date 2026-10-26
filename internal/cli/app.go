@@ -7,10 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
+	"reflect"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/AmbientCrypto/legion-controller/api"
@@ -98,12 +99,13 @@ func Execute(env Env, args []string) int {
 		return client.ExitOK
 	}
 	d := Describe(err, a.cmdPath)
-	fmt.Fprintf(env.Stderr, "Error: %s\n", d.Message)
+	st := ui.Style{On: ui.ColorEnabled(a.noColor, env.Getenv, env.StderrTTY)}
+	fmt.Fprintf(env.Stderr, "%s %s\n", st.Red(st.Bold("Error:")), d.Message)
 	if d.Code != "" {
-		fmt.Fprintf(env.Stderr, "Code: %s\n", d.Code)
+		fmt.Fprintf(env.Stderr, "%s %s\n", st.Dim("Code:"), d.Code)
 	}
 	if d.Hint != "" {
-		fmt.Fprintf(env.Stderr, "Hint: %s\n", d.Hint)
+		fmt.Fprintf(env.Stderr, "%s %s\n", st.Bold("Hint:"), d.Hint)
 	}
 	return d.Exit
 }
@@ -267,16 +269,6 @@ func ptrOr[T any](p *T, def T) T {
 	return *p
 }
 
-func joinNonEmpty(sep string, parts ...string) string {
-	var out []string
-	for _, p := range parts {
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return strings.Join(out, sep)
-}
-
 // listAll follows next_cursor to the end.
 func listAll[T any](fetch func(cursor *string) ([]T, *string, error)) ([]T, error) {
 	var all []T
@@ -293,4 +285,16 @@ func listAll[T any](fetch func(cursor *string) ([]T, *string, error)) ([]T, erro
 		cur = next
 	}
 	return all, nil
+}
+
+// ok is the tail of every API call: res is the generated *XxxResult. It
+// reports a transport error, or the problem+json answer of a non-2xx status.
+func (a *app) ok(res any, err error) error {
+	if err != nil {
+		return a.netErr(err)
+	}
+	v := reflect.ValueOf(res).Elem()
+	resp, _ := v.FieldByName("HTTPResponse").Interface().(*http.Response)
+	body, _ := v.FieldByName("Body").Interface().([]byte)
+	return client.Check(resp, body)
 }

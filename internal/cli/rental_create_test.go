@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -267,4 +268,32 @@ func TestRentalCreateWaitFailure(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	contains(t, "stderr", errs, "image_pull_failed", "legion rental delete quiet-river-7k2f")
+}
+
+func TestRentalCreateInterrupted(t *testing.T) {
+	h := newHarness(t)
+	h.stdFixtures()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	h.ctx = ctx
+	_, errs, code := h.run(createArgs("--yes")...)
+	if code != 130 {
+		t.Fatalf("exit %d: %s", code, errs)
+	}
+	contains(t, "stderr", errs, "interrupted")
+}
+
+func TestRentalCreateNetworkErrorWarnsAboutDuplicates(t *testing.T) {
+	h := newHarness(t)
+	h.stdFixtures()
+	h.on("POST /v1/rentals", func(w http.ResponseWriter, r *http.Request) {
+		hj, _ := w.(http.Hijacker)
+		conn, _, _ := hj.Hijack()
+		conn.Close() // the connection drops after the request was sent
+	})
+	_, errs, code := h.run(createArgs("--yes")...)
+	if code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	contains(t, "stderr", errs, "Code: network_error", "legion rental list")
 }

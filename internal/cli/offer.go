@@ -8,7 +8,6 @@ import (
 	"github.com/AmbientCrypto/legion-controller/api"
 	"github.com/spf13/cobra"
 
-	"github.com/AmbientCrypto/legion-cli/internal/client"
 	"github.com/AmbientCrypto/legion-cli/internal/output"
 )
 
@@ -97,7 +96,6 @@ hardware, -o name for host names. --catalog shows only hosts that can run that s
 	f.StringVar(&catalog, "catalog", "", "only hosts that can run this catalog id")
 	f.StringVar(&sort, "sort", "", "price (default), score, reliability, gpu_memory, price_per_tflops")
 	f.IntVar(&limit, "limit", 50, "most offers to list")
-	_ = cmd.RegisterFlagCompletionFunc
 
 	get := &cobra.Command{
 		Use:     "get <host>",
@@ -168,10 +166,7 @@ func (a *app) listOffers(ctx context.Context, c *api.ClientWithResponses, p *api
 	for len(all) < max {
 		p.Cursor = cur
 		r, err := c.ListOffersWithResponse(ctx, p)
-		if err != nil {
-			return nil, a.netErr(err)
-		}
-		if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+		if err := a.ok(r, err); err != nil {
 			return nil, err
 		}
 		all = append(all, r.JSON200.Items...)

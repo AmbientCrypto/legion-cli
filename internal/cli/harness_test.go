@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -41,6 +42,7 @@ type harness struct {
 	env      map[string]string
 	opened   []string
 	execs    [][]string
+	ctx      context.Context
 }
 
 func newHarness(t *testing.T) *harness {
@@ -139,6 +141,7 @@ func (h *harness) run(args ...string) (string, string, int) {
 		env[k] = v
 	}
 	e := Env{
+		Ctx:   h.ctx,
 		Stdin: strings.NewReader(h.stdin), Stdout: &out, Stderr: &errb,
 		Getenv:   func(k string) string { return env[k] },
 		StdinTTY: h.tty, StdoutTTY: false, StderrTTY: h.tty,

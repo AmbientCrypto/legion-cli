@@ -293,3 +293,15 @@ func TestOutputEnvAndFlag(t *testing.T) {
 		t.Fatal(c)
 	}
 }
+
+func TestColour(t *testing.T) {
+	h := newHarness(t)
+	h.tty = true // stderr is a terminal
+	_, e, _ := h.run("rental", "frob")
+	contains(t, "tty errors are coloured", e, "\x1b[")
+	_, e, _ = h.run("rental", "frob", "--no-color")
+	excludes(t, "--no-color", e, "\x1b[")
+	h.env["NO_COLOR"] = "1"
+	_, e, _ = h.run("rental", "frob")
+	excludes(t, "NO_COLOR", e, "\x1b[")
+}

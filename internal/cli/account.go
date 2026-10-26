@@ -12,7 +12,6 @@ import (
 	"github.com/AmbientCrypto/legion-controller/api"
 	"github.com/spf13/cobra"
 
-	"github.com/AmbientCrypto/legion-cli/internal/client"
 	"github.com/AmbientCrypto/legion-cli/internal/output"
 )
 
@@ -95,10 +94,7 @@ file is refused. Without --label the key's comment, then the file name, is the l
 				return err
 			}
 			r, err := c.AddSshKeyWithResponse(a.ctx(cmd), api.AddSshKeyRequest{Label: label, PublicKey: pub})
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+			if err := a.ok(r, err); err != nil {
 				return err
 			}
 			k := r.JSON201
@@ -128,10 +124,7 @@ file is refused. Without --label the key's comment, then the file name, is the l
 			for _, k := range keys {
 				if k.Label == as[0] || k.Fingerprint == as[0] || k.Id.String() == as[0] {
 					r, err := c.DeleteSshKeyWithResponse(a.ctx(cmd), k.Id)
-					if err != nil {
-						return a.netErr(err)
-					}
-					if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+					if err := a.ok(r, err); err != nil {
 						return err
 					}
 					a.info("Removed SSH key %s.", k.Label)
@@ -147,10 +140,7 @@ file is refused. Without --label the key's comment, then the file name, is the l
 
 func (a *app) sshKeys(ctx context.Context, c *api.ClientWithResponses) ([]api.SshKey, error) {
 	r, err := c.ListSshKeysWithResponse(ctx)
-	if err != nil {
-		return nil, a.netErr(err)
-	}
-	if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
 	return r.JSON200.Items, nil
@@ -180,10 +170,7 @@ func (a *app) apiKeyCmd() *cobra.Command {
 			}
 			keys, err := listAll(func(cur *string) ([]api.ApiKey, *string, error) {
 				r, err := c.ListApiKeysWithResponse(a.ctx(cmd), &api.ListApiKeysParams{Cursor: cur, Limit: ptr(100)})
-				if err != nil {
-					return nil, nil, a.netErr(err)
-				}
-				if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+				if err := a.ok(r, err); err != nil {
 					return nil, nil, err
 				}
 				return r.JSON200.Items, r.JSON200.NextCursor, nil
@@ -225,10 +212,7 @@ store it somewhere safe. Use scope full for the CLI and scripts.`,
 				req.ExpiresAt = ptr(time.Now().Add(expires).UTC())
 			}
 			r, err := c.CreateApiKeyWithResponse(a.ctx(cmd), req)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+			if err := a.ok(r, err); err != nil {
 				return err
 			}
 			k := r.JSON201
@@ -253,10 +237,7 @@ store it somewhere safe. Use scope full for the CLI and scripts.`,
 				return err
 			}
 			rr, err := c.ListApiKeysWithResponse(a.ctx(cmd), &api.ListApiKeysParams{Limit: ptr(100)})
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(rr.HTTPResponse, rr.Body); err != nil {
+			if err := a.ok(rr, err); err != nil {
 				return err
 			}
 			var hits []api.ApiKey
@@ -276,10 +257,7 @@ store it somewhere safe. Use scope full for the CLI and scripts.`,
 				return err
 			}
 			r, err := c.RevokeApiKeyWithResponse(a.ctx(cmd), k.Id)
-			if err != nil {
-				return a.netErr(err)
-			}
-			if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+			if err := a.ok(r, err); err != nil {
 				return err
 			}
 			a.info("Revoked API key %s.", k.Name)
@@ -337,10 +315,7 @@ func (a *app) billingCmd() *cobra.Command {
 			}
 			items, err := pages(limit, func(cur *string, n int) ([]api.RentalCharges, *string, error) {
 				r, err := c.ListRentalChargesWithResponse(a.ctx(cmd), &api.ListRentalChargesParams{Cursor: cur, Limit: &n})
-				if err != nil {
-					return nil, nil, a.netErr(err)
-				}
-				if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+				if err := a.ok(r, err); err != nil {
 					return nil, nil, err
 				}
 				return r.JSON200.Items, r.JSON200.NextCursor, nil
@@ -393,10 +368,7 @@ func (a *app) billingCmd() *cobra.Command {
 			items, err := pages(limit, func(cur *string, n int) ([]api.BillingActivityItem, *string, error) {
 				p.Cursor, p.Limit = cur, &n
 				r, err := c.ListBillingActivityWithResponse(a.ctx(cmd), &p)
-				if err != nil {
-					return nil, nil, a.netErr(err)
-				}
-				if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+				if err := a.ok(r, err); err != nil {
 					return nil, nil, err
 				}
 				return r.JSON200.Items, r.JSON200.NextCursor, nil
@@ -441,10 +413,7 @@ func (a *app) billingCmd() *cobra.Command {
 			items, err := pages(limit, func(cur *string, n int) ([]api.LedgerEntry, *string, error) {
 				p.Cursor, p.Limit = cur, &n
 				r, err := c.ListLedgerEntriesWithResponse(a.ctx(cmd), &p)
-				if err != nil {
-					return nil, nil, a.netErr(err)
-				}
-				if err := client.Check(r.HTTPResponse, r.Body); err != nil {
+				if err := a.ok(r, err); err != nil {
 					return nil, nil, err
 				}
 				return r.JSON200.Items, r.JSON200.NextCursor, nil
