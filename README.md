@@ -1,47 +1,38 @@
 # legion
 
-The command line for [Ambient Legion](https://legion.ambient.xyz) (Ambient GPU Rentals): find GPUs,
-rent them, SSH in, and stop billing when you are done.
-
-```
-$ legion version
-$ legion auth login
-$ legion offer list --gpu-model "NVIDIA GeForce RTX 4090"
-$ legion rental create --offer amber-falcon --catalog pytorch --gpus 2
-$ legion ssh quiet-river-7k2f
-$ legion rental stop quiet-river-7k2f
-```
-
-## Install
+**Rent GPUs from your terminal.** Find an offer, rent it, SSH in and stop billing, all with `legion`, the command line for [Ambient Legion](https://legion.ambient.xyz) (Ambient GPU Rentals).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/AmbientCrypto/legion-cli/main/scripts/install.sh | bash
 ```
 
-`install.sh` detects your OS and CPU, downloads the release archive, verifies its sha256 against
-`checksums.txt` and installs `legion` to `~/.local/bin` (`LEGION_INSTALL_DIR` to change,
-`LEGION_VERSION` to pin). On Windows, download the `.zip` from the releases page. Homebrew will
-follow once a public tap exists (see the commented `brews` block in `.goreleaser.yaml`).
+| | |
+|---|---|
+| **Docs** | <https://legion.ambient.xyz/docs/cli> |
+| **Legion** | <https://legion.ambient.xyz> |
+| **API docs** | <https://legion.ambient.xyz/docs/api/overview> |
+| **Create an API key** | <https://legion.ambient.xyz/settings/api-keys> |
+| **Support** | <https://legion.ambient.xyz/support> |
 
-Check it worked with `legion version`. Re-run the same command to upgrade.
+## Install
 
-## Quickstart
+`install.sh` detects your OS and CPU, verifies the release's sha256 against `checksums.txt` and installs `legion` to `~/.local/bin` (`LEGION_INSTALL_DIR` to change, `LEGION_VERSION` to pin). On Windows, download the `.zip` from the [releases page](https://github.com/AmbientCrypto/legion-cli/releases). Re-run the command to upgrade, and check with `legion version`.
 
-1. **Log in.** `legion auth login` opens <https://legion.ambient.xyz/settings/api-keys>; create a key
-   with scope **full**, paste it at the hidden prompt. In CI: `echo "$KEY" | legion auth login --with-token`
-   or just set `LEGION_API_KEY`.
-2. **Find GPUs.** `legion offer list --max-price 2.50` (prices are per GPU-hour). `legion catalog list`
-   shows the starter images and premade models you can run.
-3. **Rent.** `legion rental create --offer <host> --catalog <id>`. legion shows a preview (host, GPUs,
-   price per GPU-hour and per hour, your balance, image, SSH key), asks you to confirm, then waits until
-   the rental is running. `--dry-run` shows the preview and stops; `--async` does not wait.
-   The price you saw is sent as the most you will pay (`--max-price` to allow more); if it rose, nothing is rented.
-4. **Connect.** `legion ssh <rental>` (or `legion ssh <rental> -- nvidia-smi`). `legion rental ssh-config <rental>`
-   prints an `~/.ssh/config` block so plain `ssh`, `scp` and `rsync` work.
-5. **Stop billing.** `legion rental stop <rental>` ends GPU billing and keeps the workspace (billed for
-   storage per GiB until you `legion rental delete` it, which destroys it for good).
+## Quickstart (60 seconds)
 
-A `<rental>` is an id, a friendly name or any unique prefix. On a terminal, leave it out to pick from a list.
+```sh
+legion auth login                                   # opens Settings > API keys; create a key with scope "full" and paste it
+legion offer list --gpu-model "RTX 4090"            # cheapest first, prices per GPU-hour
+legion rental create --offer amber-falcon --catalog pytorch --gpus 2   # preview, confirm, wait until running
+legion ssh quiet-river-7k2f                         # connect (add -- nvidia-smi to run one command)
+legion rental stop quiet-river-7k2f                 # ends GPU billing, keeps the workspace
+legion rental delete quiet-river-7k2f               # destroys the workspace for good
+```
+
+- `rental create` shows a preview (host, GPUs, price per GPU-hour and per hour, balance, image, SSH key) and asks first. `--dry-run` stops there; `--async` does not wait. The price you saw is the most you pay (`--max-price` to allow more); if it rose, nothing is rented.
+- A `<rental>` is an id, a friendly name or any unique prefix. On a terminal, leave it out to pick from a list.
+- `legion rental ssh-config <rental>` prints an `~/.ssh/config` block so `ssh`, `scp` and `rsync` work.
+- `legion catalog list` shows the starter images and premade models.
 
 ## Commands
 
@@ -58,56 +49,42 @@ legion api-key list|create|revoke      legion completion bash|zsh|fish|powershel
 legion version                         legion help environment|exit-codes
 ```
 
-Every command has `--help` with examples; the generated reference is in [`docs/reference`](docs/reference).
-Nouns are singular with plural aliases (`legion rentals list`).
+Every command has `--help` with examples. **Every flag is in the generated reference: [`docs/reference`](docs/reference).** Nouns are singular with plural aliases (`legion rentals list`).
 
 ## Configuration
 
-Precedence, first match wins: **flag > environment > profile > default** (also `legion help environment`).
+Precedence, first match wins: **flag > environment > profile > default** (see `legion help environment`).
 
-| Setting | Flag | Environment | Profile key | Default |
-|---|---|---|---|---|
-| profile | `-p/--profile` | `LEGION_PROFILE` | `current_profile` | `default` |
-| API URL | `--api-url` | `LEGION_API_URL` | `api_url` | `https://api.legion.ambient.xyz` |
-| output | `-o/--output` | `LEGION_OUTPUT` | `output` | `table` |
-| API key | (none, so it stays out of `ps`) | `LEGION_API_KEY` | credentials | log in |
-| config directory | | `LEGION_CONFIG_DIR` | | user config dir + `/legion` |
+| Setting | Flag | Environment | Default |
+|---|---|---|---|
+| profile | `-p/--profile` | `LEGION_PROFILE` | `default` |
+| API URL | `--api-url` | `LEGION_API_URL` | `https://api.legion.ambient.xyz` |
+| output | `-o/--output` | `LEGION_OUTPUT` | `table` |
+| API key | none (keeps it out of `ps`) | `LEGION_API_KEY` | log in |
+| config directory | | `LEGION_CONFIG_DIR` | user config dir + `/legion` |
 
-Files: `config.yaml` (profiles) and `credentials.yaml` (API keys, mode `0600`, directory `0700`; legion
-warns if the permissions are looser). Profiles: `legion profile create staging --api-url https://...`,
-`legion profile use staging`, or `-p staging` per command. `legion auth status` shows what is in effect;
-the API URL must be https (http only for localhost).
+Settings live in `config.yaml` and keys in `credentials.yaml` (mode `0600`). `legion auth status` shows what is in effect. For CI, skip login: set `LEGION_API_KEY`, or `echo "$KEY" | legion auth login --with-token`. See [`legion profile`](docs/reference/legion_profile.md) and [`legion config`](docs/reference/legion_config.md).
 
-Other global flags: `--no-color` (also `NO_COLOR`, and automatic when not a terminal), `-q/--quiet`
-(results only), `--debug` (method, path, status and duration of each request on stderr; never the key),
-`--timeout` (per request), `-y/--yes`.
+## Output and scripting
 
-## Output
-
-`-o table` (default), `wide` (more columns), `json`, `yaml`, `name` (one name per line, for scripts),
-`jsonpath=<expr>`:
+`-o table` (default), `wide`, `json`, `yaml`, `name` (one name per line) or `jsonpath=<expr>`:
 
 ```sh
 legion rental list -o json | jq '.[].name'
 legion rental list -o 'jsonpath=$[?(@.state=="running")].name'
-legion rental get quiet-river-7k2f -o jsonpath=$.ssh.host
 ```
 
-Results go to stdout; progress, prompts and "what to do next" hints go to stderr (progress only on a
-terminal), so machine formats stay clean. Money is US dollars, shown from the API's minor units ($2.50).
+Results go to stdout; progress, prompts and hints go to stderr, so machine formats stay clean. Commands that spend or destroy need confirmation: with no terminal and no `--yes` they refuse (exit 2). `rental create` in a script needs `--offer`, an image (`--image` or `--catalog`) and `--yes`.
 
 ## Completion
 
 ```sh
 source <(legion completion bash)                          # ~/.bashrc
 legion completion zsh > "${fpath[1]}/_legion"             # then restart zsh; needs compinit
-                                                          # (echo "autoload -U compinit; compinit" >> ~/.zshrc)
 legion completion fish > ~/.config/fish/completions/legion.fish
-legion completion powershell | Out-String | Invoke-Expression
 ```
 
-Completion suggests live rental names, host names, catalog ids, saved SSH key labels and GPU models
-(short timeout; silent when offline or logged out).
+Completion suggests live rental names, host names, catalog ids, SSH key labels and GPU models. Details: [`legion completion`](docs/reference/legion_completion.md).
 
 ## Exit codes
 
@@ -115,28 +92,22 @@ Completion suggests live rental names, host names, catalog ids, saved SSH key la
 |---|---|
 | 0 | success |
 | 1 | error (including a suspended organization or a feature turned off for it) |
-| 2 | usage error (bad flag or argument, a request the API rejects as invalid; nothing to confirm with and no `--yes`) |
+| 2 | usage error (bad flag or argument, a request the API rejects as invalid, or nothing to confirm with and no `--yes`) |
 | 3 | not logged in, or the key is invalid, expired or lacks scope |
 | 4 | not found |
 | 5 | conflict or price changed |
 | 6 | insufficient credit |
 | 130 | interrupted |
 
-Failures print `Error:`, `Code:` (the API's stable error code) and `Hint:` (the next command) on stderr.
-
-## Scripts and automation
-
-Commands that spend or destroy need confirmation. With no terminal and no `--yes` they refuse (exit 2)
-instead of guessing. `rental create` needs `--offer`, an image (`--image` or `--catalog`) and `--yes`.
-Creating a rental sends a fresh random `Idempotency-Key`.
+Failures print `Error:`, `Code:` and `Hint:` (the next command to run) on stderr.
 
 ## Development
 
 ```sh
 export GOPRIVATE='github.com/AmbientCrypto/*'
+go build -o legion ./cmd/legion
 go test -race ./... && go vet ./...
 go run ./tools/gendocs docs/reference   # regenerate the reference; CI checks it is current
 ```
 
-The API client is the generated `github.com/AmbientCrypto/legion-controller/api`, pinned in `go.mod`
-(never copy the spec or re-run codegen here). See `AGENTS.md` for conventions.
+Building from source needs access to the private API client module, `github.com/AmbientCrypto/legion-controller/api` (pinned in `go.mod`; never copy the spec or re-run codegen here). Release binaries need none of this. See `AGENTS.md` for conventions.
