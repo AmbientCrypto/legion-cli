@@ -36,7 +36,12 @@ type Preview struct {
 	CatalogID      string          `json:"catalog_id,omitempty"`
 	SSHKey         string          `json:"ssh_key"`
 	SSHFingerprint string          `json:"ssh_key_fingerprint,omitempty"`
-	gpusDefaulted  bool
+	// OwnUse is set when the host is the caller's own (LGN-547): PricePerGPUHr
+	// is then Ambient's fee and ListedPrice the host's own listed price.
+	OwnUse        bool       `json:"own_use,omitempty"`
+	OwnUseFeeBps  *int       `json:"own_use_fee_bps,omitempty"`
+	ListedPrice   *api.Money `json:"listed_price_per_gpu_hour,omitempty"`
+	gpusDefaulted bool
 }
 
 func (p Preview) write(w io.Writer, title string) {
@@ -53,6 +58,10 @@ func (p Preview) write(w io.Writer, title string) {
 		fmt.Fprintf(w, " (you accept up to %s per GPU-hour)", output.Money(p.MaxPricePerGPU.AmountMinor, cur))
 	}
 	fmt.Fprintln(w)
+	if p.OwnUse {
+		fmt.Fprintf(w, "  Your host: You pay Ambient %s of your listed price, %s per GPU-hour. You earn nothing on your own use. A paying renter can take these GPUs at your listed price.\n",
+			feePercent(p.OwnUseFeeBps), output.Money(p.PricePerGPUHr.AmountMinor, cur))
+	}
 	if p.StoragePerGiB != nil {
 		fmt.Fprintf(w, "  Storage:   %s per GiB-month while stopped\n", output.Money(p.StoragePerGiB.AmountMinor, cur))
 	}
@@ -85,6 +94,7 @@ func (a *app) rentalCreateCmd() *cobra.Command {
 GPUs, price per GPU-hour and per hour, your balance, image and SSH key - and asks you to confirm.
 The price you saw is sent as the most you will pay: if the host's price rises first, nothing is
 rented and you are told the new price. Billing is per second while the rental runs.
+On a host your own organization owns you pay only Ambient's fee (a share of your listed price, shown in the preview), earn nothing, and a paying renter can take the GPUs.
 
 By default legion waits until the rental is running; --async returns at once.
 Missing flags are asked for on a terminal. In scripts pass --offer, an image (--image or
@@ -117,6 +127,10 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 				return err
 			}
 			cur := offer.PricePerGpuHour
+			own := ownOffer(*offer)
+			if own {
+				cur = ownOfferPrice(*offer)
+			}
 			if maxCents > 0 && maxCents < cur.AmountMinor {
 				return usagef("Raise --max-price, or drop it to accept the current price.", "--max-price %s is below %s's current price of %s per GPU-hour, so the rental would be refused",
 					output.Money(maxCents, string(cur.Currency)), san(offer.HostName), output.Money(cur.AmountMinor, string(cur.Currency)))
@@ -124,6 +138,10 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 			req := api.CreateRentalRequest{HostId: offer.HostId, GpuCount: gpus}
 			pv := Preview{HostID: offer.HostId.String(), HostName: offer.HostName, GPUModel: offer.GpuModel, GPUMemoryMiB: offer.GpuMemoryMib,
 				PricePerGPUHr: cur, StoragePerGiB: offer.StoragePricePerGibMonth}
+			if own {
+				pv.OwnUse, pv.OwnUseFeeBps, pv.ListedPrice = true, offer.OwnUseFeeBps, &offer.PricePerGpuHour
+				pv.StoragePerGiB = nil // own use keeps no billed storage
+			}
 
 			if err := a.chooseImage(ctx, c, offer, image, catalogID, &req, &pv); err != nil {
 				return err

@@ -8,6 +8,7 @@ Rent GPUs on one host and start a container on them. legion first shows a previe
 GPUs, price per GPU-hour and per hour, your balance, image and SSH key - and asks you to confirm.
 The price you saw is sent as the most you will pay: if the host's price rises first, nothing is
 rented and you are told the new price. Billing is per second while the rental runs.
+On a host your own organization owns you pay only Ambient's fee (a share of your listed price, shown in the preview), earn nothing, and a paying renter can take the GPUs.
 
 By default legion waits until the rental is running; --async returns at once.
 Missing flags are asked for on a terminal. In scripts pass --offer, an image (--image or

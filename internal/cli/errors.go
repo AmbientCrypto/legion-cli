@@ -95,6 +95,12 @@ func describeAPI(e *client.Error, path string) Described {
 			d.Message = fmt.Sprintf("The price changed: this host now charges %s per GPU-hour, above the maximum you agreed to.", output.Money(e.CurrentPrice.AmountMinor, string(e.CurrentPrice.Currency)))
 		}
 		d.Hint = "Re-run the command to review the new price (add --max-price to accept a higher one)."
+	case e.Code == "linked_host":
+		d.Message = "Your organization cannot rent this host."
+		d.Hint = "Find another host: legion offer list"
+	case e.Code == "own_host":
+		d.Message = "You cannot bid on a host your organization owns."
+		d.Hint = "Rent it for your own use at Ambient's fee: legion rental create --offer <host>"
 	case e.Code == "gpus_unavailable" || e.Code == "gpus_interruptible":
 		d.Hint = "Those GPUs were just taken. Find another host: legion offer list"
 	case e.Code == "catalog_entry_incompatible":

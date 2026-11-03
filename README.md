@@ -31,6 +31,7 @@ legion rental delete quiet-river-7k2f               # destroys the workspace for
 
 - `auth login` saves an API key named `Legion CLI (<this computer>)` (scope full, 90 days); revoke it in Settings > API keys or with `legion auth logout`. On a remote machine with no local browser use `legion auth login --paste`; in CI pipe a key to `legion auth login --with-token` or set `LEGION_API_KEY`.
 - `rental create` shows a preview (host, GPUs, price per GPU-hour and per hour, balance, image, SSH key) and asks first. `--dry-run` stops there; `--async` does not wait. The price you saw is the most you pay (`--max-price` to allow more); if it rose, nothing is rented.
+- Renting a host your own organization owns is **own use**: you pay only Ambient's platform fee (5% of your host's listed price per GPU-hour), you earn nothing on it, and a paying renter can take the GPUs. `offer list` and `offer get` mark your hosts "your host" with that price, and `rental list` and `rental get` mark the rental. An organization linked to a host's provider cannot rent it.
 - A `<rental>` is an id, a friendly name or any unique prefix. On a terminal, leave it out to pick from a list.
 - `legion rental ssh-config <rental>` prints an `~/.ssh/config` block so `ssh`, `scp` and `rsync` work.
 - `legion catalog list` shows the starter images and premade models.
