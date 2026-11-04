@@ -1,7 +1,5 @@
-github.com/AmbientCrypto/legion-controller v0.59.0 h1:ruioKGNR0QKmVrtk+LrMSo/NCrR5hGNubb9RcklRohI=
-github.com/AmbientCrypto/legion-controller v0.59.0/go.mod h1:TB7o13iofeoWOErpBgzvFflhAXyCFX9XGceyoNcpKD4=
-github.com/AmbientCrypto/legion-controller v0.63.0 h1:aJhJNu+EkFNiFYek3n3g88vnppkUTmj1tOsghVBI+QA=
-github.com/AmbientCrypto/legion-controller v0.63.0/go.mod h1:xVf5FT5D1QlZW+VU3CI85BkOwpUGllnKAeB6K2g6wgA=
+github.com/AmbientCrypto/legion-controller v0.67.0 h1:KLeW+z1slULMgu5A5UvC0g5lizQDKReIJVVRvk7Lefg=
+github.com/AmbientCrypto/legion-controller v0.67.0/go.mod h1:2E86JZ4QGQokE8Gng/oUDjFDtJ1AD0Rnjsru3+VHnGw=
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0 h1:axGnT1gRIfimI7gJifB699GoE/oq+F2MU7Dml6nw9rQ=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0/go.mod h1:lvDnEdqiQrp0O42VQGgmlKpxL1AP2+08jFMw88y4klk=

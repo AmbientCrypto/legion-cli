@@ -91,3 +91,102 @@ func TestRentalCreateLinkedHostRefused(t *testing.T) {
 		}
 	}
 }
+
+// ---- LGN-549: all-in prices and the platform fee note ----
+
+func feeOfferFixture() api.Offer {
+	o := offerFixture()
+	o.RenterFeeBps = ptr(500)
+	return o
+}
+
+func TestOfferListPlatformFeeNote(t *testing.T) {
+	h := newHarness(t)
+	h.reply("GET /v1/offers", 200, api.OfferPage{Items: []api.Offer{feeOfferFixture()}})
+	_, errs := h.mustRun("offer", "list")
+	contains(t, "list", errs, "Prices include a 5% platform fee.")
+}
+
+func TestOfferListNoFeeNoNote(t *testing.T) {
+	h := newHarness(t)
+	o := offerFixture()
+	o.RenterFeeBps = ptr(0)
+	h.reply("GET /v1/offers", 200, api.OfferPage{Items: []api.Offer{o, offerFixture()}})
+	out, errs := h.mustRun("offer", "list")
+	excludes(t, "list", out+errs, "platform fee")
+}
+
+func TestOfferGetPlatformFeeNote(t *testing.T) {
+	h := newHarness(t)
+	h.reply("GET /v1/offers/"+uidS(50), 200, api.OfferDetail{Offer: feeOfferFixture(), UptimeDaily: []api.DayUptime{}})
+	out, _ := h.mustRun("offer", "get", uidS(50))
+	contains(t, "get", out, "Price:      $2.50 per GPU-hour", "Prices include a 5% platform fee.")
+}
+
+func TestOfferGetOwnHostFloorWording(t *testing.T) {
+	h := newHarness(t)
+	o := ownOfferFixture()
+	o.RenterFeeBps = ptr(500)
+	o.OwnUseFeeFloorPerGpuHour = ptr(money(7))
+	h.reply("GET /v1/offers/"+uidS(50), 200, api.OfferDetail{Offer: o, UptimeDaily: []api.DayUptime{}})
+	out, _ := h.mustRun("offer", "get", uidS(50))
+	contains(t, "get", out, "the greater of 5% of your listed price of $2.50 and the $0.07 minimum")
+	excludes(t, "get", out, "Prices include")
+}
+
+func TestRentalCreatePreviewPlatformFeeNote(t *testing.T) {
+	h := newHarness(t)
+	h.stdFixtures()
+	h.reply("GET /v1/offers/"+uidS(50), 200, api.OfferDetail{Offer: feeOfferFixture(), UptimeDaily: []api.DayUptime{}})
+	h.rentalLifecycle("quiet-river-7k2f", 9)
+	out, _ := h.mustRun(createArgs("--dry-run")...)
+	contains(t, "preview", out, "Prices include a 5% platform fee.")
+}
+
+func TestRentalCreateOwnHostPreviewFloor(t *testing.T) {
+	h := newHarness(t)
+	h.stdFixtures()
+	o := ownOfferFixture()
+	o.OwnUseFeeFloorPerGpuHour = ptr(money(7))
+	h.reply("GET /v1/offers/"+uidS(50), 200, api.OfferDetail{Offer: o, UptimeDaily: []api.DayUptime{}})
+	h.rentalLifecycle("quiet-river-7k2f", 9)
+	out, _ := h.mustRun(createArgs("--dry-run")...)
+	contains(t, "preview", out, "the greater of 5% of your listed price and the $0.07 minimum, $0.13 per GPU-hour")
+}
+
+func TestRentalGetPlatformFeeNote(t *testing.T) {
+	h := newHarness(t)
+	r := rentalFixture(9, "quiet-river-7k2f", api.RentalStateRunning)
+	r.RenterFeeBps = ptr(500)
+	h.reply("GET /v1/rentals/"+uidS(9), 200, r)
+	out, _ := h.mustRun("rental", "get", uidS(9))
+	contains(t, "get", out, "Includes a 5% platform fee.")
+	h2 := newHarness(t)
+	h2.reply("GET /v1/rentals/"+uidS(9), 200, rentalFixture(9, "quiet-river-7k2f", api.RentalStateRunning))
+	out, _ = h2.mustRun("rental", "get", uidS(9))
+	excludes(t, "get", out, "platform fee")
+}
+
+func TestRentalChargesShowsPlatformFee(t *testing.T) {
+	h := newHarness(t)
+	r := rentalFixture(9, "quiet-river-7k2f", api.RentalStateRunning)
+	h.reply("GET /v1/rentals/"+uidS(9), 200, r)
+	h.reply("GET /v1/rentals/"+uidS(9)+"/charges", 200, api.RentalCharges{
+		RentalId: uid(9), Seconds: 3600,
+		Charged: api.SignedMoney{AmountMinor: 525, Currency: "USD"}, RenterFee: &api.SignedMoney{AmountMinor: 25, Currency: "USD"},
+		StorageCharged: api.SignedMoney{AmountMinor: 21, Currency: "USD"}, StorageRenterFee: &api.SignedMoney{AmountMinor: 1, Currency: "USD"},
+	})
+	out, _ := h.mustRun("rental", "charges", uidS(9))
+	contains(t, "charges", out, "Compute:  $5.25 (includes $0.25 platform fee)", "Storage:  $0.21 (includes $0.01 platform fee)", "Total:    $5.46")
+}
+
+func TestRentalChargesNoFeeNoNote(t *testing.T) {
+	h := newHarness(t)
+	h.reply("GET /v1/rentals/"+uidS(9), 200, rentalFixture(9, "quiet-river-7k2f", api.RentalStateRunning))
+	h.reply("GET /v1/rentals/"+uidS(9)+"/charges", 200, api.RentalCharges{
+		RentalId: uid(9), Seconds: 60, Charged: api.SignedMoney{AmountMinor: 8, Currency: "USD"},
+		RenterFee: &api.SignedMoney{AmountMinor: 0, Currency: "USD"}, StorageCharged: api.SignedMoney{Currency: "USD"},
+	})
+	out, _ := h.mustRun("rental", "charges", uidS(9))
+	excludes(t, "charges", out, "platform fee")
+}

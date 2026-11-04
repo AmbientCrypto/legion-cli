@@ -6,7 +6,7 @@ Rent GPUs and start a container
 
 Rent GPUs on one host and start a container on them. legion first shows a preview - host,
 GPUs, price per GPU-hour and per hour, your balance, image and SSH key - and asks you to confirm.
-The price you saw is sent as the most you will pay: if the host's price rises first, nothing is
+Prices include the platform fee (shown in the preview), and --max-price is all-in too. The price you saw is sent as the most you will pay: if the host's price rises first, nothing is
 rented and you are told the new price. Billing is per second while the rental runs.
 On a host your own organization owns you pay only Ambient's fee (a share of your listed price, shown in the preview), earn nothing, and a paying renter can take the GPUs.
 
@@ -35,7 +35,7 @@ legion rental create [flags]
       --gpus int                number of GPUs (default 1, or what the catalog entry needs)
   -h, --help                    help for create
       --image string            container image, for example pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
-      --max-price string        most you will pay per GPU-hour in dollars, for example 2.60 (default: the price shown)
+      --max-price string        most you will pay per GPU-hour in dollars, platform fee included, for example 2.60 (default: the price shown)
       --offer string            host to rent: id or name from 'legion offer list'
       --ssh-key string          saved SSH key (id, label or fingerprint) or a path to a .pub file
       --wait                    wait until the rental is running (default true)

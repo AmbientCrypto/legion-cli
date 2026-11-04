@@ -38,8 +38,11 @@ type Preview struct {
 	SSHFingerprint string          `json:"ssh_key_fingerprint,omitempty"`
 	// OwnUse is set when the host is the caller's own (LGN-547): PricePerGPUHr
 	// is then Ambient's fee and ListedPrice the host's own listed price.
-	OwnUse        bool       `json:"own_use,omitempty"`
-	OwnUseFeeBps  *int       `json:"own_use_fee_bps,omitempty"`
+	OwnUse       bool       `json:"own_use,omitempty"`
+	OwnUseFeeBps *int       `json:"own_use_fee_bps,omitempty"`
+	OwnUseFloor  *api.Money `json:"own_use_fee_floor_per_gpu_hour,omitempty"`
+	// RenterFeeBps is the platform fee already inside every price shown (LGN-549).
+	RenterFeeBps  *int       `json:"renter_fee_bps,omitempty"`
 	ListedPrice   *api.Money `json:"listed_price_per_gpu_hour,omitempty"`
 	gpusDefaulted bool
 }
@@ -59,8 +62,10 @@ func (p Preview) write(w io.Writer, title string) {
 	}
 	fmt.Fprintln(w)
 	if p.OwnUse {
-		fmt.Fprintf(w, "  Your host: You pay Ambient %s of your listed price, %s per GPU-hour. You earn nothing on your own use. A paying renter can take these GPUs at your listed price.\n",
-			feePercent(p.OwnUseFeeBps), output.Money(p.PricePerGPUHr.AmountMinor, cur))
+		fmt.Fprintf(w, "  Your host: You pay Ambient %s, %s per GPU-hour. You earn nothing on your own use. A paying renter can take these GPUs at your listed price.\n",
+			ownFeeBasis(p.OwnUseFeeBps, "your listed price", p.OwnUseFloor), output.Money(p.PricePerGPUHr.AmountMinor, cur))
+	} else if note := feeNote(p.RenterFeeBps); note != "" {
+		fmt.Fprintf(w, "             %s\n", note)
 	}
 	if p.StoragePerGiB != nil {
 		fmt.Fprintf(w, "  Storage:   %s per GiB-month while stopped\n", output.Money(p.StoragePerGiB.AmountMinor, cur))
@@ -92,7 +97,7 @@ func (a *app) rentalCreateCmd() *cobra.Command {
 		Short: "Rent GPUs and start a container",
 		Long: `Rent GPUs on one host and start a container on them. legion first shows a preview - host,
 GPUs, price per GPU-hour and per hour, your balance, image and SSH key - and asks you to confirm.
-The price you saw is sent as the most you will pay: if the host's price rises first, nothing is
+Prices include the platform fee (shown in the preview), and --max-price is all-in too. The price you saw is sent as the most you will pay: if the host's price rises first, nothing is
 rented and you are told the new price. Billing is per second while the rental runs.
 On a host your own organization owns you pay only Ambient's fee (a share of your listed price, shown in the preview), earn nothing, and a paying renter can take the GPUs.
 
@@ -137,9 +142,9 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 			}
 			req := api.CreateRentalRequest{HostId: offer.HostId, GpuCount: gpus}
 			pv := Preview{HostID: offer.HostId.String(), HostName: offer.HostName, GPUModel: offer.GpuModel, GPUMemoryMiB: offer.GpuMemoryMib,
-				PricePerGPUHr: cur, StoragePerGiB: offer.StoragePricePerGibMonth}
+				PricePerGPUHr: cur, StoragePerGiB: offer.StoragePricePerGibMonth, RenterFeeBps: offer.RenterFeeBps}
 			if own {
-				pv.OwnUse, pv.OwnUseFeeBps, pv.ListedPrice = true, offer.OwnUseFeeBps, &offer.PricePerGpuHour
+				pv.OwnUse, pv.OwnUseFeeBps, pv.OwnUseFloor, pv.ListedPrice = true, offer.OwnUseFeeBps, offer.OwnUseFeeFloorPerGpuHour, &offer.PricePerGpuHour
 				pv.StoragePerGiB = nil // own use keeps no billed storage
 			}
 
@@ -247,7 +252,7 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 	f.StringVar(&image, "image", "", "container image, for example pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime")
 	f.StringVar(&catalogID, "catalog", "", "starter image or premade model id from 'legion catalog list'")
 	f.StringVar(&sshKeyArg, "ssh-key", "", "saved SSH key (id, label or fingerprint) or a path to a .pub file")
-	f.StringVar(&maxPrice, "max-price", "", "most you will pay per GPU-hour in dollars, for example 2.60 (default: the price shown)")
+	f.StringVar(&maxPrice, "max-price", "", "most you will pay per GPU-hour in dollars, platform fee included, for example 2.60 (default: the price shown)")
 	f.BoolVar(&wait, "wait", true, "wait until the rental is running")
 	f.BoolVar(&async, "async", false, "return as soon as the rental is created (same as --wait=false)")
 	f.DurationVar(&waitTimeout, "wait-timeout", 10*time.Minute, "how long to wait for the rental to run")

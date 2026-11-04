@@ -29,7 +29,7 @@ legion offer list [flags]
   -h, --help                    help for list
       --limit int               most offers to list (default 50)
       --max-latency int         most round-trip milliseconds to --region (or to the host's nearest region)
-      --max-price string        most per GPU-hour in dollars, e.g. 2.50
+      --max-price string        most per GPU-hour in dollars, platform fee included, e.g. 2.50
       --min-gpus int            at least this many free GPUs
       --region string           reference region for latency: us-east-1, us-west-2, eu-central-1, ap-northeast-1, ap-southeast-1
       --sort string             price (default), score, reliability, gpu_memory, price_per_tflops

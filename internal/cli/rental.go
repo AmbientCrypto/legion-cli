@@ -187,6 +187,11 @@ func rentalDetail(w io.Writer, st ui.Style, r api.Rental) {
 	}
 	fmt.Fprintf(w, "Image:      %s\nGPUs:       %d (host %s)\n", san(r.Image), r.GpuCount, r.HostId)
 	fmt.Fprintf(w, "Price:      %s per GPU-hour (%s per hour)\n", signed(api.SignedMoney(r.PricePerGpuHour)), signed(api.SignedMoney{AmountMinor: hourly(r), Currency: r.PricePerGpuHour.Currency}))
+	if !ptrOr(r.OwnUse, false) {
+		if feeNote(r.RenterFeeBps) != "" {
+			fmt.Fprintf(w, "            Includes a %s platform fee.\n", feePercent(r.RenterFeeBps))
+		}
+	}
 	if ptrOr(r.OwnUse, false) {
 		fmt.Fprintf(w, "Own use:    your own host, Ambient's fee %s of your listed price", feePercent(r.OwnUseFeeBps))
 		if r.OwnUseReferencePrice != nil {
@@ -497,7 +502,7 @@ func (a *app) rentalChargesCmd() *cobra.Command {
 				}
 				return a.emit(output.Result{Data: ch, Human: func(w io.Writer) {
 					total := ch.Charged.AmountMinor + ch.StorageCharged.AmountMinor
-					fmt.Fprintf(w, "Rental:   %s\nBilled:   %s\nCompute:  %s\nStorage:  %s\n", r.Name, output.Duration(ch.Seconds), signed(ch.Charged), signed(ch.StorageCharged))
+					fmt.Fprintf(w, "Rental:   %s\nBilled:   %s\nCompute:  %s%s\nStorage:  %s%s\n", r.Name, output.Duration(ch.Seconds), signed(ch.Charged), includesFee(ch.RenterFee), signed(ch.StorageCharged), includesFee(ch.StorageRenterFee))
 					if ch.BackupCharged != nil {
 						total += ch.BackupCharged.AmountMinor
 						fmt.Fprintf(w, "Backups:  %s\n", signed(*ch.BackupCharged))
@@ -507,6 +512,15 @@ func (a *app) rentalChargesCmd() *cobra.Command {
 			})
 		},
 	}
+}
+
+// includesFee notes the platform fee inside a charge (already part of the
+// amount, LGN-549). Empty when the API reports none.
+func includesFee(fee *api.SignedMoney) string {
+	if fee == nil || fee.AmountMinor == 0 {
+		return ""
+	}
+	return " (includes " + signed(*fee) + " platform fee)"
 }
 
 func signed(m api.SignedMoney) string { return output.Money(m.AmountMinor, string(m.Currency)) }
