@@ -143,7 +143,7 @@ func (a *app) wireCompletions(root *cobra.Command) {
 	}
 	for _, p := range []string{"rental get", "rental stop", "rental start", "rental delete", "rental wait", "rental ssh", "rental ssh-config",
 		"rental charges", "rental serve", "ssh", "rental ingress list", "rental ingress add", "rental ingress remove", "rental backup estimate",
-		"rental backup create", "rental backup list", "rental export create", "rental export list", "rental export get", "rental export cancel"} {
+		"rental backup create", "rental backup list", "rental export create", "rental export list", "rental export get", "rental export estimate", "rental export link", "rental export cancel"} {
 		set(p, 1, a.rentalNamesFor)
 	}
 	set("offer get", 1, a.offerNamesFor)

@@ -10,6 +10,7 @@ Read by Claude Code (CLAUDE.md is a symlink to this file), Codex, and other codi
 - `docs/reference/*.md` is generated: `go run ./tools/gendocs docs/reference`; CI fails when it is stale.
 - Never print or log the API key or the `Authorization` header.
 - Bumping the controller API: `go get github.com/AmbientCrypto/legion-controller/api@<tag>`, fix compile errors, run the tests.
+- Downloads (LGN-551): workspace exports carry no URL on read. `rental export estimate` shows the price, `rental export link` shows the charge, confirms (or `--yes`), sends an `Idempotency-Key` and prints the single-use URL. `rental backup download-link` says whether the link is included or charged. A reused or expired link is 410 `link_used`, worded in `describeAPI`. Prices come from the API, never hard-coded.
 - Private module: `export GOPRIVATE='github.com/AmbientCrypto/*'`.
 
 ## Jira & branch conventions (Atlassian-enabled)

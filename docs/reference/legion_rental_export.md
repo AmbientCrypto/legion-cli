@@ -1,10 +1,12 @@
 ## legion rental export
 
-Export a rental's workspace to a download
+Export a stopped rental's workspace and download it
 
 ### Synopsis
 
-A workspace export uploads the files of a running rental to a download URL. Unlike a backup it is not kept after it expires.
+A workspace export copies the files of a stopped rental into a file you can download. Making the export is free.
+Downloading it is charged by the GiB, every time you make a download link, and each link works once.
+See the price first with 'rental export estimate'; make a link with 'rental export link'.
 
 ```
 legion rental export [flags]
@@ -13,8 +15,10 @@ legion rental export [flags]
 ### Examples
 
 ```
+  legion rental export estimate quiet-river-7k2f
   legion rental export create quiet-river-7k2f
   legion rental export get quiet-river-7k2f <export-id>
+  legion rental export link quiet-river-7k2f <export-id>
 ```
 
 ### Options
@@ -41,6 +45,8 @@ legion rental export [flags]
 * [legion rental](legion_rental.md)	 - Create, connect to, stop and delete rentals
 * [legion rental export cancel](legion_rental_export_cancel.md)	 - Cancel an export
 * [legion rental export create](legion_rental_export_create.md)	 - Start exporting a workspace
+* [legion rental export estimate](legion_rental_export_estimate.md)	 - Show what downloading a workspace export will cost
 * [legion rental export get](legion_rental_export_get.md)	 - Show one export
+* [legion rental export link](legion_rental_export_link.md)	 - Make a single-use download link for a ready export
 * [legion rental export list](legion_rental_export_list.md)	 - List a rental's exports
 
