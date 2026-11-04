@@ -345,8 +345,8 @@ rental once the backup is ready.`,
 			}
 			return a.emit(backupResult([]api.Backup{*r.JSON200}, true))
 		})
-	link := byID("download-link <backup-id>", "Make a download link for a ready backup",
-		"Create a time-limited URL to download a ready backup. Further links are charged; the charge is printed.",
+	link := byID("download-link <backup-id>", "Make a single-use download link for a ready backup",
+		"Make a link to download a ready backup. The link works once and expires after about an hour. The first link is included in the backup's price; every further link is charged by the GiB and not refunded, and the command says which this one is. If a link was already used or has expired, make a new one.",
 		"  legion rental backup download-link 6f1c2e3a-...\n  legion rental backup download-link 6f1c2e3a-... -o jsonpath=$.url",
 		func(ctx context.Context, c *api.ClientWithResponses, id uuid.UUID) error {
 			key := uuid.NewString()
@@ -358,7 +358,11 @@ rental once the backup is ready.`,
 			if err != nil {
 				return err
 			}
-			a.info("Link %d, charge %s, expires %s.", l.LinkNumber, output.Money(l.Charge.AmountMinor, string(l.Charge.Currency)), ts(l.ExpiresAt))
+			cost := "included in the backup's price"
+			if l.Charge.AmountMinor > 0 {
+				cost = "charged " + output.Money(l.Charge.AmountMinor, string(l.Charge.Currency)) + ", not refunded"
+			}
+			a.info("Link %d: %s. It works once and expires %s.", l.LinkNumber, cost, ts(l.ExpiresAt))
 			return a.emit(output.Result{Data: l, Names: []string{l.Url}, Human: func(w io.Writer) { fmt.Fprintln(w, san(l.Url)) }})
 		})
 	cmd.AddCommand(estimate, create, list, get, del, cancel, link)
@@ -414,26 +418,79 @@ func backupResult(bs []api.Backup, single bool) output.Result {
 
 // ---- workspace export ----
 
+// cents is a whole-cent amount in US dollars.
+func cents(n int64) string { return output.Money(n, "USD") }
+
+// linkCents is what one download of a size costs: whole cents, rounded up, at
+// least one cent unless the price is zero (the controller's rule, shown here
+// before the person confirms; the controller charges the real figure).
+func linkCents(sizeBytes, centsPerGiB int64) int64 {
+	if centsPerGiB <= 0 {
+		return 0
+	}
+	const gib = int64(1) << 30
+	whole, rest := sizeBytes/gib, sizeBytes%gib
+	c := whole * centsPerGiB
+	if rest > 0 {
+		c += (rest*centsPerGiB + gib - 1) / gib
+	}
+	if c < 1 {
+		c = 1
+	}
+	return c
+}
+
+func minutes(sec int64) string { return fmt.Sprintf("%d minutes", (sec+59)/60) }
+
+func writeExportEstimate(w io.Writer, e *api.WorkspaceExportEstimate) {
+	fmt.Fprintf(w, "Workspace size:  %s (%s)\nPrice:           %s per GiB for each download link\nOne download:    about %s\nLinks:           work once, for %s after you make them\nMaking the export itself is free.\n",
+		output.Bytes(e.EstimatedBytes), san(string(e.Basis)), cents(e.PriceCentsPerGib), cents(e.EstimatedDownloadCents), minutes(e.LinkTtlSeconds))
+}
+
 func (a *app) exportCmd() *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:     "export",
 		Aliases: []string{"exports"},
-		Short:   "Export a rental's workspace to a download",
-		Long:    "A workspace export uploads the files of a running rental to a download URL. Unlike a backup it is not kept after it expires.",
-		Example: `  legion rental export create quiet-river-7k2f
-  legion rental export get quiet-river-7k2f <export-id>`,
+		Short:   "Export a stopped rental's workspace and download it",
+		Long: `A workspace export copies the files of a stopped rental into a file you can download. Making the export is free.
+Downloading it is charged by the GiB, every time you make a download link, and each link works once.
+See the price first with 'rental export estimate'; make a link with 'rental export link'.`,
+		Example: `  legion rental export estimate quiet-river-7k2f
+  legion rental export create quiet-river-7k2f
+  legion rental export get quiet-river-7k2f <export-id>
+  legion rental export link quiet-river-7k2f <export-id>`,
 	})
 	res := func(e api.WorkspaceExport) output.Result {
-		return detail(listResult([]api.WorkspaceExport{e}, []string{"ID", "STATE", "SIZE", "EXPIRES"}, []string{"DOWNLOAD URL"},
+		return detail(listResult([]api.WorkspaceExport{e}, []string{"ID", "STATE", "SIZE"}, nil,
 			func(e api.WorkspaceExport) string { return e.Id.String() },
 			func(e api.WorkspaceExport) []string {
-				return []string{e.Id.String(), string(e.State), bytesOf(e.SizeBytes), tsp(e.ExpiresAt), ptrOr(e.DownloadUrl, "")}
+				return []string{e.Id.String(), string(e.State), bytesOf(e.SizeBytes)}
 			}), e)
+	}
+	estimate := &cobra.Command{
+		Use:     "estimate <rental>",
+		Short:   "Show what downloading a workspace export will cost",
+		Long:    "Show the estimated size of the rental's workspace and the price of one download link, without making an export. A link is charged by the GiB every time you make one and works once.",
+		Example: "  legion rental export estimate quiet-river-7k2f\n  legion rental export estimate quiet -o json",
+		Args:    args(0, 1),
+		RunE: func(cmd *cobra.Command, as []string) error {
+			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
+				resp, err := c.EstimateWorkspaceExportWithResponse(ctx, r.Id)
+				if err := a.ok(resp, err); err != nil {
+					return err
+				}
+				e, err := need(resp.JSON200)
+				if err != nil {
+					return err
+				}
+				return a.emit(output.Result{Data: e, Human: func(w io.Writer) { writeExportEstimate(w, e) }})
+			})
+		},
 	}
 	create := &cobra.Command{
 		Use:     "create <rental>",
 		Short:   "Start exporting a workspace",
-		Long:    "Start an export of the rental's workspace. Follow it with 'rental export get'; when ready it has a download URL.",
+		Long:    "Start an export of the stopped rental's workspace. Making it is free. Follow it with 'rental export get'; when it is ready, 'rental export link' makes a single-use download link, which is charged by the GiB.",
 		Example: "  legion rental export create quiet-river-7k2f\n  legion rental export create quiet -o name",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
@@ -447,6 +504,7 @@ func (a *app) exportCmd() *cobra.Command {
 					return err
 				}
 				a.info("Export %s started. Follow it: legion rental export get %s %s", e.Id, r.Name, e.Id)
+				a.info("Downloading it is charged by the GiB: legion rental export estimate %s", r.Name)
 				return a.emit(res(*e))
 			})
 		},
@@ -487,8 +545,8 @@ func (a *app) exportCmd() *cobra.Command {
 			},
 		}
 	}
-	get := exportByID("get <rental> <export-id>", "Show one export", "Show an export's state and, when ready, its download URL.",
-		"  legion rental export get quiet-river-7k2f 6f1c...\n  legion rental export get quiet 6f1c... -o jsonpath=$.download_url",
+	get := exportByID("get <rental> <export-id>", "Show one export", "Show an export's state and size. When it is ready, make a download link with 'rental export link' (charged by the GiB, works once).",
+		"  legion rental export get quiet-river-7k2f 6f1c...\n  legion rental export get quiet 6f1c... -o jsonpath=$.state",
 		func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental, id uuid.UUID) error {
 			resp, err := c.GetWorkspaceExportWithResponse(ctx, r.Id, id)
 			if err := a.ok(resp, err); err != nil {
@@ -498,7 +556,57 @@ func (a *app) exportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if e.State == api.WorkspaceExportReady {
+				a.info("Ready. Download it: legion rental export link %s %s (charged by the GiB, the link works once)", r.Name, e.Id)
+			}
 			return a.emit(res(*e))
+		})
+	link := exportByID("link <rental> <export-id>", "Make a single-use download link for a ready export",
+		"Make a link to download a ready export. Each link is charged by the GiB (the charge is shown first and you confirm, or pass --yes), is not refunded, works once and expires after about an hour. Make a new link if one is used or has expired.",
+		"  legion rental export link quiet-river-7k2f 6f1c...\n  legion rental export link quiet 6f1c... --yes -o jsonpath=$.url",
+		func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental, id uuid.UUID) error {
+			gr, err := c.GetWorkspaceExportWithResponse(ctx, r.Id, id)
+			if err := a.ok(gr, err); err != nil {
+				return err
+			}
+			e, err := need(gr.JSON200)
+			if err != nil {
+				return err
+			}
+			if e.State != api.WorkspaceExportReady {
+				return errorf(fmt.Sprintf("legion rental export get %s %s", r.Name, e.Id), "export %s is not ready (state: %s)", e.Id, e.State)
+			}
+			er, err := c.EstimateWorkspaceExportWithResponse(ctx, r.Id)
+			if err := a.ok(er, err); err != nil {
+				return err
+			}
+			est, err := need(er.JSON200)
+			if err != nil {
+				return err
+			}
+			var size int64
+			if e.SizeBytes != nil {
+				size = *e.SizeBytes
+			}
+			charge := linkCents(size, est.PriceCentsPerGib)
+			if !a.quiet {
+				fmt.Fprintf(a.env.Stderr, "Export size:     %s\nThis link:       %s (%s per GiB), not refunded\nThe link works once and expires %s after you make it.\n",
+					output.Bytes(size), cents(charge), cents(est.PriceCentsPerGib), minutes(est.LinkTtlSeconds))
+			}
+			if err := a.confirm(fmt.Sprintf("Make a single-use download link for %s?", cents(charge)), "refusing to make a charged download link without confirmation"); err != nil {
+				return err
+			}
+			key := uuid.NewString()
+			lr, err := c.CreateWorkspaceExportDownloadLinkWithResponse(ctx, r.Id, id, &api.CreateWorkspaceExportDownloadLinkParams{IdempotencyKey: key})
+			if err := a.ok(lr, err); err != nil {
+				return err
+			}
+			l, err := need(lr.JSON201)
+			if err != nil {
+				return err
+			}
+			a.info("Link %d, charged %s. It works once and expires %s.", l.Number, cents(l.ChargeCents), ts(l.ExpiresAt))
+			return a.emit(output.Result{Data: l, Names: []string{l.Url}, Human: func(w io.Writer) { fmt.Fprintln(w, san(l.Url)) }})
 		})
 	cancel := exportByID("cancel <rental> <export-id>", "Cancel an export", "Cancel an export that is still running.",
 		"  legion rental export cancel quiet-river-7k2f 6f1c...\n  legion rental export cancel quiet 6f1c... -q",
@@ -510,6 +618,6 @@ func (a *app) exportCmd() *cobra.Command {
 			a.info("Cancelled export %s.", id)
 			return nil
 		})
-	cmd.AddCommand(create, list, get, cancel)
+	cmd.AddCommand(estimate, create, list, get, link, cancel)
 	return cmd
 }

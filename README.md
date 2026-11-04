@@ -45,7 +45,7 @@ legion config get|set                  legion profile list|create|use|delete
 legion catalog list|get                legion offer list|get
 legion rental create|list|get|stop|start|delete|wait|ssh|ssh-config|charges|serve
 legion rental ingress list|add|remove  legion rental backup estimate|create|list|get|delete|cancel|download-link
-legion rental export create|list|get|cancel
+legion rental export estimate|create|list|get|link|cancel
 legion ssh <rental>                    legion ssh-key list|add|remove
 legion billing balance|charges|activity|ledger
 legion api-key list|create|revoke      legion completion bash|zsh|fish|powershell

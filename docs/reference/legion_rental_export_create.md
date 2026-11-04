@@ -4,7 +4,7 @@ Start exporting a workspace
 
 ### Synopsis
 
-Start an export of the rental's workspace. Follow it with 'rental export get'; when ready it has a download URL.
+Start an export of the stopped rental's workspace. Making it is free. Follow it with 'rental export get'; when it is ready, 'rental export link' makes a single-use download link, which is charged by the GiB.
 
 ```
 legion rental export create <rental> [flags]
@@ -38,5 +38,5 @@ legion rental export create <rental> [flags]
 
 ### SEE ALSO
 
-* [legion rental export](legion_rental_export.md)	 - Export a rental's workspace to a download
+* [legion rental export](legion_rental_export.md)	 - Export a stopped rental's workspace and download it
 

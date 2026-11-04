@@ -1,10 +1,10 @@
 ## legion rental backup download-link
 
-Make a download link for a ready backup
+Make a single-use download link for a ready backup
 
 ### Synopsis
 
-Create a time-limited URL to download a ready backup. Further links are charged; the charge is printed.
+Make a link to download a ready backup. The link works once and expires after about an hour. The first link is included in the backup's price; every further link is charged by the GiB and not refunded, and the command says which this one is. If a link was already used or has expired, make a new one.
 
 ```
 legion rental backup download-link <backup-id> [flags]

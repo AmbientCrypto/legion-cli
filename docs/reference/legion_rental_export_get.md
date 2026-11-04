@@ -4,7 +4,7 @@ Show one export
 
 ### Synopsis
 
-Show an export's state and, when ready, its download URL.
+Show an export's state and size. When it is ready, make a download link with 'rental export link' (charged by the GiB, works once).
 
 ```
 legion rental export get <rental> <export-id> [flags]
@@ -14,7 +14,7 @@ legion rental export get <rental> <export-id> [flags]
 
 ```
   legion rental export get quiet-river-7k2f 6f1c...
-  legion rental export get quiet 6f1c... -o jsonpath=$.download_url
+  legion rental export get quiet 6f1c... -o jsonpath=$.state
 ```
 
 ### Options
@@ -38,5 +38,5 @@ legion rental export get <rental> <export-id> [flags]
 
 ### SEE ALSO
 
-* [legion rental export](legion_rental_export.md)	 - Export a rental's workspace to a download
+* [legion rental export](legion_rental_export.md)	 - Export a stopped rental's workspace and download it
 
