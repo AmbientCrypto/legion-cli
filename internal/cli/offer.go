@@ -159,7 +159,7 @@ func offerResult(os []api.Offer) output.Result {
 	return listResult(os, []string{"HOST", "GPU", "FREE/TOTAL", "VRAM", "PRICE/GPU-HR"}, []string{"HOST ID", "COUNTRY", "CPU/GPU", "RAM/GPU", "DISK/GPU", "DRIVER"},
 		func(o api.Offer) string { return o.HostName },
 		func(o api.Offer) []string {
-			return []string{o.HostName, o.GpuModel, fmt.Sprintf("%d/%d", o.GpusFree, o.GpuCount), fmt.Sprintf("%d GiB", o.GpuMemoryMib/1024), signed(api.SignedMoney(o.PricePerGpuHour)),
+			return []string{o.HostName, o.GpuModel, fmt.Sprintf("%d/%d", o.GpusFree, o.GpuCount), fmt.Sprintf("%d GiB", o.GpuMemoryMib/1024), signed(api.SignedMoney(offerPrice(o))) + ownTag(o),
 				o.HostId.String(), ptrOr(o.Country, ""), fmt.Sprint(o.PerGpu.CpuCores), output.Bytes(o.PerGpu.MemoryMib << 20), fmt.Sprintf("%d GiB", o.PerGpu.DiskGib), ptrOr(o.DriverVersion, "")}
 		})
 }
@@ -167,7 +167,16 @@ func offerResult(os []api.Offer) output.Result {
 func offerDetail(w io.Writer, o api.Offer) {
 	cur := string(o.PricePerGpuHour.Currency)
 	fmt.Fprintf(w, "Host:       %s (%s)\nGPU:        %d x %s, %d GiB each, %d free\n", san(o.HostName), o.HostId, o.GpuCount, san(o.GpuModel), o.GpuMemoryMib/1024, o.GpusFree)
-	fmt.Fprintf(w, "Price:      %s per GPU-hour\n", output.Money(o.PricePerGpuHour.AmountMinor, cur))
+	if ownOffer(o) {
+		fmt.Fprintf(w, "Your host:  yes. Own use costs %s per GPU-hour: Ambient's fee, %s of your listed price of %s.\n",
+			output.Money(offerPrice(o).AmountMinor, cur), feePercent(o.OwnUseFeeBps), output.Money(o.PricePerGpuHour.AmountMinor, cur))
+		if o.OwnUseInterruptiblePricePerGpuHour != nil {
+			fmt.Fprintf(w, "            On your interruptible price it is %s per GPU-hour.\n", output.Money(o.OwnUseInterruptiblePricePerGpuHour.AmountMinor, cur))
+		}
+		fmt.Fprintln(w, "            You earn nothing on your own use, and a paying renter can take these GPUs.")
+	} else {
+		fmt.Fprintf(w, "Price:      %s per GPU-hour\n", output.Money(o.PricePerGpuHour.AmountMinor, cur))
+	}
 	if o.StoragePricePerGibMonth != nil {
 		fmt.Fprintf(w, "Storage:    %s per GiB-month while stopped\n", output.Money(o.StoragePricePerGibMonth.AmountMinor, cur))
 	}
@@ -198,4 +207,41 @@ func (a *app) listOffers(ctx context.Context, c *api.ClientWithResponses, p *api
 		}
 		return pg.Items, pg.NextCursor, nil
 	})
+}
+
+// ownOffer reports whether the host belongs to the caller's organization
+// (LGN-547): renting it is own use.
+func ownOffer(o api.Offer) bool { return ptrOr(o.OwnHost, false) }
+
+// ownOfferPrice is what own use of an own host pays per GPU-hour: Ambient's
+// fee, not the host's listed price. Zero when the host has no price yet.
+func ownOfferPrice(o api.Offer) api.Money {
+	if o.OwnUsePricePerGpuHour != nil {
+		return *o.OwnUsePricePerGpuHour
+	}
+	return api.Money{AmountMinor: 0, Currency: o.PricePerGpuHour.Currency}
+}
+
+// offerPrice is the price the caller would pay per GPU-hour on demand.
+func offerPrice(o api.Offer) api.Money {
+	if ownOffer(o) {
+		return ownOfferPrice(o)
+	}
+	return o.PricePerGpuHour
+}
+
+// ownTag marks an own host in tables.
+func ownTag(o api.Offer) string {
+	if ownOffer(o) {
+		return " (your host)"
+	}
+	return ""
+}
+
+// feePercent words a fee in basis points as a percentage: 500 is "5%".
+func feePercent(bps *int) string {
+	if bps == nil {
+		return "Ambient's fee"
+	}
+	return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.2f", float64(*bps)/100), "0"), ".") + "%"
 }

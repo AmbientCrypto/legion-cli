@@ -131,6 +131,14 @@ func matchRental(all []api.Rental, arg string) (*api.Rental, error) {
 
 // ---- rendering ----
 
+// rentalOwnTag marks own use in tables.
+func rentalOwnTag(r api.Rental) string {
+	if ptrOr(r.OwnUse, false) {
+		return " (your own host)"
+	}
+	return ""
+}
+
 func hourly(r api.Rental) int64 { return r.PricePerGpuHour.AmountMinor * int64(r.GpuCount) }
 
 func rentalResult(rs []api.Rental) output.Result {
@@ -141,7 +149,7 @@ func rentalResult(rs []api.Rental) output.Result {
 			if r.Ssh != nil {
 				ssh = fmt.Sprintf("%s:%d", r.Ssh.Host, r.Ssh.Port)
 			}
-			return []string{r.Name, string(r.State), fmt.Sprint(r.GpuCount), signed(api.SignedMoney(r.PricePerGpuHour)), r.Image, ts(r.CreatedAt), r.Id.String(), r.HostId.String(), ssh}
+			return []string{r.Name, string(r.State), fmt.Sprint(r.GpuCount), signed(api.SignedMoney(r.PricePerGpuHour)) + rentalOwnTag(r), r.Image, ts(r.CreatedAt), r.Id.String(), r.HostId.String(), ssh}
 		})
 }
 
@@ -179,6 +187,17 @@ func rentalDetail(w io.Writer, st ui.Style, r api.Rental) {
 	}
 	fmt.Fprintf(w, "Image:      %s\nGPUs:       %d (host %s)\n", san(r.Image), r.GpuCount, r.HostId)
 	fmt.Fprintf(w, "Price:      %s per GPU-hour (%s per hour)\n", signed(api.SignedMoney(r.PricePerGpuHour)), signed(api.SignedMoney{AmountMinor: hourly(r), Currency: r.PricePerGpuHour.Currency}))
+	if ptrOr(r.OwnUse, false) {
+		fmt.Fprintf(w, "Own use:    your own host, Ambient's fee %s of your listed price", feePercent(r.OwnUseFeeBps))
+		if r.OwnUseReferencePrice != nil {
+			fmt.Fprintf(w, " (%s per GPU-hour", signed(api.SignedMoney(*r.OwnUseReferencePrice)))
+			if r.OwnUseReferenceBasis != nil && *r.OwnUseReferenceBasis == api.OwnUseBasisInterruptible {
+				fmt.Fprint(w, ", your interruptible price")
+			}
+			fmt.Fprint(w, ")")
+		}
+		fmt.Fprintln(w, ". You earn nothing on it, and a paying renter can take these GPUs.")
+	}
 	if r.StoragePricePerGibMonth != nil {
 		fmt.Fprintf(w, "Storage:    %s per GiB-month while stopped\n", signed(api.SignedMoney(*r.StoragePricePerGibMonth)))
 	}
