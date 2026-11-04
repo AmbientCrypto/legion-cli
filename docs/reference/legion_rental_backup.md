@@ -43,7 +43,7 @@ legion rental backup [flags]
 * [legion rental backup cancel](legion_rental_backup_cancel.md)	 - Cancel a backup in progress
 * [legion rental backup create](legion_rental_backup_create.md)	 - Back up a rental's workspace
 * [legion rental backup delete](legion_rental_backup_delete.md)	 - Delete a backup
-* [legion rental backup download-link](legion_rental_backup_download-link.md)	 - Make a download link for a ready backup
+* [legion rental backup download-link](legion_rental_backup_download-link.md)	 - Make a single-use download link for a ready backup
 * [legion rental backup estimate](legion_rental_backup_estimate.md)	 - Estimate a backup's size and price
 * [legion rental backup get](legion_rental_backup_get.md)	 - Show one backup
 * [legion rental backup list](legion_rental_backup_list.md)	 - List backups

@@ -38,5 +38,5 @@ legion rental export list <rental> [flags]
 
 ### SEE ALSO
 
-* [legion rental export](legion_rental_export.md)	 - Export a rental's workspace to a download
+* [legion rental export](legion_rental_export.md)	 - Export a stopped rental's workspace and download it
 

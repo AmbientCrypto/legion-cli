@@ -113,6 +113,15 @@ func describeAPI(e *client.Error, path string) Described {
 		d.Hint = "That catalog entry is turned off. Pick another: legion catalog list"
 	case e.Code == "access_not_approved" || e.Code == "terms_not_accepted" || e.Code == "email_unverified":
 		d.Hint = "Finish setting up your account in the web console: https://legion.ambient.xyz"
+	case e.Code == "link_used" || e.Status == 410:
+		d.Message = "This download link was already used or has expired."
+		if strings.Contains(path, "backup") {
+			d.Hint = "Make a new link: legion rental backup download-link <backup-id>"
+		} else {
+			d.Hint = "Make a new link: legion rental export link <rental> <export-id>"
+		}
+	case e.Code == "export_not_ready":
+		d.Hint = "Wait until it is ready: legion rental export get <rental> <export-id>"
 	case e.Code == "rate_limited" || e.Status == 429:
 		d.Hint = "Wait a moment and retry."
 	case e.Status == 404:

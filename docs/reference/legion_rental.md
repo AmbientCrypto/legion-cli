@@ -45,7 +45,7 @@ legion rental [flags]
 * [legion rental charges](legion_rental_charges.md)	 - Show what one rental has cost so far
 * [legion rental create](legion_rental_create.md)	 - Rent GPUs and start a container
 * [legion rental delete](legion_rental_delete.md)	 - Delete a rental and destroy its workspace
-* [legion rental export](legion_rental_export.md)	 - Export a rental's workspace to a download
+* [legion rental export](legion_rental_export.md)	 - Export a stopped rental's workspace and download it
 * [legion rental get](legion_rental_get.md)	 - Show one rental
 * [legion rental ingress](legion_rental_ingress.md)	 - Expose a port of a rental on the internet
 * [legion rental list](legion_rental_list.md)	 - List your rentals
