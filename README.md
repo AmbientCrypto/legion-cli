@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/AmbientCrypto/legion-cli/main/scrip
 
 ```sh
 legion auth login                                   # opens your browser; approve "Legion CLI" and you are signed in
-legion offer list --gpu-model "RTX 4090"            # cheapest first, prices per GPU-hour
+legion offer list --gpu-model "RTX 4090"            # cheapest first, prices per GPU-hour (platform fee included)
 legion rental create --offer amber-falcon --catalog pytorch --gpus 2   # preview, confirm, wait until running
 legion ssh quiet-river-7k2f                         # connect (add -- nvidia-smi to run one command)
 legion rental stop quiet-river-7k2f                 # ends GPU billing, keeps the workspace
@@ -30,8 +30,9 @@ legion rental delete quiet-river-7k2f               # destroys the workspace for
 ```
 
 - `auth login` saves an API key named `Legion CLI (<this computer>)` (scope full, 90 days); revoke it in Settings > API keys or with `legion auth logout`. On a remote machine with no local browser use `legion auth login --paste`; in CI pipe a key to `legion auth login --with-token` or set `LEGION_API_KEY`.
+- Prices include the platform fee (5% on top of the provider's price, shown as "Prices include a 5% platform fee."), and `--max-price` is all-in too. `rental get` and `rental charges` show the fee inside what you paid.
 - `rental create` shows a preview (host, GPUs, price per GPU-hour and per hour, balance, image, SSH key) and asks first. `--dry-run` stops there; `--async` does not wait. The price you saw is the most you pay (`--max-price` to allow more); if it rose, nothing is rented.
-- Renting a host your own organization owns is **own use**: you pay only Ambient's platform fee (5% of your host's listed price per GPU-hour), you earn nothing on it, and a paying renter can take the GPUs. `offer list` and `offer get` mark your hosts "your host" with that price, and `rental list` and `rental get` mark the rental. An organization linked to a host's provider cannot rent it.
+- Renting a host your own organization owns is **own use**: you pay only Ambient's platform fee (the greater of 5% of your host's listed price and the minimum per GPU-hour that `offer get` shows), you earn nothing on it, and a paying renter can take the GPUs. `offer list` and `offer get` mark your hosts "your host" with that price, and `rental list` and `rental get` mark the rental. An organization linked to a host's provider cannot rent it.
 - A `<rental>` is an id, a friendly name or any unique prefix. On a terminal, leave it out to pick from a list.
 - `legion rental ssh-config <rental>` prints an `~/.ssh/config` block so `ssh`, `scp` and `rsync` work.
 - `legion catalog list` shows the starter images and premade models.

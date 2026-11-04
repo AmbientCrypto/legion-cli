@@ -101,6 +101,9 @@ hardware, -o name for host names. --catalog shows only hosts that can run that s
 				return err
 			}
 			if len(offers) > 0 {
+				if note := offersFeeNote(offers); note != "" {
+					a.info("%s", note)
+				}
 				a.info("Rent one: legion rental create --offer <host> --catalog <id>")
 			}
 			return nil
@@ -109,7 +112,7 @@ hardware, -o name for host names. --catalog shows only hosts that can run that s
 	f := list.Flags()
 	f.StringArrayVar(&models, "gpu-model", nil, "GPU model, a case-insensitive part of its name, e.g. \"rtx 4090\" (repeatable)")
 	f.IntVar(&minGPUs, "min-gpus", 0, "at least this many free GPUs")
-	f.StringVar(&maxPrice, "max-price", "", "most per GPU-hour in dollars, e.g. 2.50")
+	f.StringVar(&maxPrice, "max-price", "", "most per GPU-hour in dollars, platform fee included, e.g. 2.50")
 	f.StringVar(&region, "region", "", "reference region for latency: us-east-1, us-west-2, eu-central-1, ap-northeast-1, ap-southeast-1")
 	f.IntVar(&maxLatency, "max-latency", 0, "most round-trip milliseconds to --region (or to the host's nearest region)")
 	f.StringArrayVar(&countries, "country", nil, "host country code, e.g. US (repeatable)")
@@ -168,14 +171,17 @@ func offerDetail(w io.Writer, o api.Offer) {
 	cur := string(o.PricePerGpuHour.Currency)
 	fmt.Fprintf(w, "Host:       %s (%s)\nGPU:        %d x %s, %d GiB each, %d free\n", san(o.HostName), o.HostId, o.GpuCount, san(o.GpuModel), o.GpuMemoryMib/1024, o.GpusFree)
 	if ownOffer(o) {
-		fmt.Fprintf(w, "Your host:  yes. Own use costs %s per GPU-hour: Ambient's fee, %s of your listed price of %s.\n",
-			output.Money(offerPrice(o).AmountMinor, cur), feePercent(o.OwnUseFeeBps), output.Money(o.PricePerGpuHour.AmountMinor, cur))
+		fmt.Fprintf(w, "Your host:  yes. Own use costs %s per GPU-hour: Ambient's fee, %s.\n",
+			output.Money(offerPrice(o).AmountMinor, cur), ownFeeBasis(o.OwnUseFeeBps, "your listed price of "+output.Money(o.PricePerGpuHour.AmountMinor, cur), o.OwnUseFeeFloorPerGpuHour))
 		if o.OwnUseInterruptiblePricePerGpuHour != nil {
 			fmt.Fprintf(w, "            On your interruptible price it is %s per GPU-hour.\n", output.Money(o.OwnUseInterruptiblePricePerGpuHour.AmountMinor, cur))
 		}
 		fmt.Fprintln(w, "            You earn nothing on your own use, and a paying renter can take these GPUs.")
 	} else {
 		fmt.Fprintf(w, "Price:      %s per GPU-hour\n", output.Money(o.PricePerGpuHour.AmountMinor, cur))
+		if note := feeNote(o.RenterFeeBps); note != "" {
+			fmt.Fprintf(w, "            %s\n", note)
+		}
 	}
 	if o.StoragePricePerGibMonth != nil {
 		fmt.Fprintf(w, "Storage:    %s per GiB-month while stopped\n", output.Money(o.StoragePricePerGibMonth.AmountMinor, cur))
@@ -244,4 +250,38 @@ func feePercent(bps *int) string {
 		return "Ambient's fee"
 	}
 	return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.2f", float64(*bps)/100), "0"), ".") + "%"
+}
+
+// feeNote is the plain line that tells a renter the shown prices already
+// carry the platform fee (LGN-549). Empty when there is no fee. The rate is
+// the API's renter_fee_bps; the fee itself is never computed here.
+func feeNote(bps *int) string {
+	if bps == nil || *bps <= 0 {
+		return ""
+	}
+	return "Prices include a " + feePercent(bps) + " platform fee."
+}
+
+// offersFeeNote is feeNote for a list: the rate of the first offer that
+// carries a platform fee (own hosts pay none).
+func offersFeeNote(offers []api.Offer) string {
+	for _, o := range offers {
+		if ownOffer(o) {
+			continue
+		}
+		if n := feeNote(o.RenterFeeBps); n != "" {
+			return n
+		}
+	}
+	return ""
+}
+
+// ownFeeBasis words how the own-use fee is set: a share of the listed price,
+// or the greater of that share and the API's floor (LGN-549). what is the
+// phrase for the listed price, e.g. "your listed price of $2.50".
+func ownFeeBasis(bps *int, what string, floor *api.Money) string {
+	if floor == nil {
+		return feePercent(bps) + " of " + what
+	}
+	return "the greater of " + feePercent(bps) + " of " + what + " and the " + output.Money(floor.AmountMinor, string(floor.Currency)) + " minimum"
 }
