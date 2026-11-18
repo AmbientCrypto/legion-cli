@@ -44,6 +44,7 @@ legion [flags]
 * [legion config](legion_config.md)	 - Read and change settings of the current profile
 * [legion offer](legion_offer.md)	 - Browse GPU offers from hosts
 * [legion profile](legion_profile.md)	 - Manage named profiles (API URL, key, default output)
+* [legion registry](legion_registry.md)	 - Save registry credentials to rent private images
 * [legion rental](legion_rental.md)	 - Create, connect to, stop and delete rentals
 * [legion ssh](legion_ssh.md)	 - SSH into a rental (shortcut for 'legion rental ssh')
 * [legion ssh-key](legion_ssh-key.md)	 - Save the SSH public keys you rent with
