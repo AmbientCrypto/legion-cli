@@ -106,6 +106,12 @@ type Error struct {
 	Title        string
 	Detail       string
 	CurrentPrice *api.Money // price_changed: what the host charges now
+	// ResourceID is the resource a conflict refers to (registry_credential_exists: the saved one).
+	ResourceID string
+	// RegistryHost is the registry a registry problem is about (LGN-623).
+	RegistryHost string
+	// Rentals are the rentals still using a registry credential (registry_credential_in_use).
+	Rentals []api.RegistryCredentialRental
 }
 
 func (e *Error) Error() string {
@@ -150,6 +156,15 @@ func Check(resp *http.Response, body []byte) error {
 		e.Code, e.Title, e.CurrentPrice = p.Code, p.Title, p.CurrentPricePerGpuHour
 		if p.Detail != nil {
 			e.Detail = *p.Detail
+		}
+		if p.ResourceId != nil {
+			e.ResourceID = p.ResourceId.String()
+		}
+		if p.RegistryHost != nil {
+			e.RegistryHost = *p.RegistryHost
+		}
+		if p.RegistryCredentialRentals != nil {
+			e.Rentals = *p.RegistryCredentialRentals
 		}
 	} else {
 		e.Title = http.StatusText(resp.StatusCode)

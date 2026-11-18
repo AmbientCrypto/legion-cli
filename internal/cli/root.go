@@ -87,7 +87,7 @@ func (a *app) root() *cobra.Command {
 	ssh.Use, ssh.Short = "ssh <rental> [-- command...]", "SSH into a rental (shortcut for 'legion rental ssh')"
 	add(grpStart, a.authCmd(), a.whoamiCmd(), a.offerCmd(), a.catalogCmd(), ssh)
 	add(grpCompute, a.rentalCmd())
-	add(grpAccount, a.sshKeyCmd(), a.billingCmd(), a.apiKeyCmd())
+	add(grpAccount, a.sshKeyCmd(), a.registryCmd(), a.billingCmd(), a.apiKeyCmd())
 	add(grpOther, a.configCmd(), a.profileCmd(), a.versionCmd(), a.updateCmd(), a.completionCmd())
 	root.AddCommand(topic("environment", "How flags, environment variables and profiles combine", environmentHelp))
 	root.AddCommand(topic("exit-codes", "What legion's exit codes mean", exitCodesHelp))

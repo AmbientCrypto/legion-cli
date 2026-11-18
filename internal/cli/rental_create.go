@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"io"
 	"os"
 	"path/filepath"
@@ -86,11 +87,11 @@ func (p Preview) write(w io.Writer, title string) {
 
 func (a *app) rentalCreateCmd() *cobra.Command {
 	var (
-		offerArg, image, catalogID, sshKeyArg, maxPrice string
-		gpus                                            int
-		async, dryRun                                   bool
-		wait                                            = true
-		waitTimeout                                     time.Duration
+		offerArg, image, catalogID, sshKeyArg, maxPrice, registryCred string
+		gpus                                                          int
+		async, dryRun                                                 bool
+		wait                                                          = true
+		waitTimeout                                                   time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -114,6 +115,14 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 			}
 			if image != "" && catalogID != "" {
 				return usagef("legion rental create --help", "use either --image or --catalog, not both")
+			}
+			var credID *openapi_types.UUID
+			if registryCred != "" {
+				id, err := parseCredentialID(registryCred)
+				if err != nil {
+					return err
+				}
+				credID = &id
 			}
 			c, err := a.api()
 			if err != nil {
@@ -141,6 +150,9 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 					output.Money(maxCents, string(cur.Currency)), san(offer.HostName), output.Money(cur.AmountMinor, string(cur.Currency)))
 			}
 			req := api.CreateRentalRequest{HostId: offer.HostId, GpuCount: gpus}
+			if credID != nil {
+				req.RegistryCredentialId = credID
+			}
 			pv := Preview{HostID: offer.HostId.String(), HostName: offer.HostName, GPUModel: offer.GpuModel, GPUMemoryMiB: offer.GpuMemoryMib,
 				PricePerGPUHr: cur, StoragePerGiB: offer.StoragePricePerGibMonth, RenterFeeBps: offer.RenterFeeBps}
 			if own {
@@ -191,6 +203,9 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 				}
 				if sshKeyArg != "" {
 					cmdline = append(cmdline, "--ssh-key", sshKeyArg)
+				}
+				if registryCred != "" {
+					cmdline = append(cmdline, "--registry-credential", registryCred)
 				}
 				a.info("Dry run: nothing rented. To rent: %s --yes", shellJoin(cmdline))
 				return a.emit(output.Result{Data: pv, Names: []string{pv.HostName}, Human: func(w io.Writer) { pv.write(w, "Rental preview") }})
@@ -250,6 +265,7 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 	f.StringVar(&offerArg, "host", "", "alias of --offer")
 	f.IntVar(&gpus, "gpus", 0, "number of GPUs (default 1, or what the catalog entry needs)")
 	f.StringVar(&image, "image", "", "container image, for example pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime")
+	f.StringVar(&registryCred, "registry-credential", "", "registry credential id for a private image (default: the one matching the image's host and path; see 'legion registry list')")
 	f.StringVar(&catalogID, "catalog", "", "starter image or premade model id from 'legion catalog list'")
 	f.StringVar(&sshKeyArg, "ssh-key", "", "saved SSH key (id, label or fingerprint) or a path to a .pub file")
 	f.StringVar(&maxPrice, "max-price", "", "most you will pay per GPU-hour in dollars, platform fee included, for example 2.60 (default: the price shown)")

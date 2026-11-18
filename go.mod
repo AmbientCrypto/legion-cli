@@ -1,9 +1,9 @@
 module github.com/AmbientCrypto/legion-cli
 
-go 1.27.3
+go 1.27.4
 
 require (
-	github.com/AmbientCrypto/legion-controller v0.67.0
+	github.com/AmbientCrypto/legion-controller v0.79.1-0.20261118163441-7829a06e984d
 	github.com/google/uuid v1.6.0
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/ohler55/ojg v1.28.8
@@ -20,5 +20,5 @@ require (
 	github.com/oapi-codegen/nullable v1.1.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 )

@@ -29,17 +29,18 @@ legion rental create [flags]
 ### Options
 
 ```
-      --async                   return as soon as the rental is created (same as --wait=false)
-      --catalog string          starter image or premade model id from 'legion catalog list'
-      --dry-run                 print the preview and exit without renting
-      --gpus int                number of GPUs (default 1, or what the catalog entry needs)
-  -h, --help                    help for create
-      --image string            container image, for example pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
-      --max-price string        most you will pay per GPU-hour in dollars, platform fee included, for example 2.60 (default: the price shown)
-      --offer string            host to rent: id or name from 'legion offer list'
-      --ssh-key string          saved SSH key (id, label or fingerprint) or a path to a .pub file
-      --wait                    wait until the rental is running (default true)
-      --wait-timeout duration   how long to wait for the rental to run (default 10m0s)
+      --async                        return as soon as the rental is created (same as --wait=false)
+      --catalog string               starter image or premade model id from 'legion catalog list'
+      --dry-run                      print the preview and exit without renting
+      --gpus int                     number of GPUs (default 1, or what the catalog entry needs)
+  -h, --help                         help for create
+      --image string                 container image, for example pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
+      --max-price string             most you will pay per GPU-hour in dollars, platform fee included, for example 2.60 (default: the price shown)
+      --offer string                 host to rent: id or name from 'legion offer list'
+      --registry-credential string   registry credential id for a private image (default: the one matching the image's host and path; see 'legion registry list')
+      --ssh-key string               saved SSH key (id, label or fingerprint) or a path to a .pub file
+      --wait                         wait until the rental is running (default true)
+      --wait-timeout duration        how long to wait for the rental to run (default 10m0s)
 ```
 
 ### Options inherited from parent commands

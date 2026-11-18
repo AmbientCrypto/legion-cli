@@ -113,6 +113,7 @@ func describeAPI(e *client.Error, path string) Described {
 		d.Hint = "That catalog entry is turned off. Pick another: legion catalog list"
 	case e.Code == "access_not_approved" || e.Code == "terms_not_accepted" || e.Code == "email_unverified":
 		d.Hint = "Finish setting up your account in the web console: https://legion.ambient.xyz"
+	case registryProblem(e, &d):
 	case e.Code == "link_used" || e.Status == 410:
 		d.Message = "This download link was already used or has expired."
 		if strings.Contains(path, "backup") {
@@ -150,4 +151,65 @@ func listHint(path string) string {
 		return "legion " + words[0] + " list"
 	}
 	return "legion rental list"
+}
+
+// registryProblem words the registry credential refusals (LGN-623). It
+// reports whether it handled e; the secret is never part of any of them.
+func registryProblem(e *client.Error, d *Described) bool {
+	host := e.RegistryHost
+	if host == "" {
+		host = "the registry"
+	}
+	switch e.Code {
+	case "registry_ecr_unsupported":
+		d.Message = "AWS ECR is not supported yet. ECR passwords last 12 hours and are made from AWS, so the only way for a host to pull the image would be with a long-lived AWS secret, which Legion never gives a host."
+		d.Hint = "Use a registry that issues pull tokens (Docker Hub, ghcr.io, GitLab, Quay, NGC, Harbor, Artifact Registry or Azure), or mirror the image to one."
+	case "registry_auth_unsupported":
+		d.Message = host + " does not use a token service (it asks for a plain username and password), so Legion cannot give a host a short-lived token for it."
+		d.Hint = "Use a registry with token authentication, or mirror the image to one."
+	case "registry_host_not_allowed":
+		d.Message = host + " is not a registry Legion sends credentials to. Addresses, local names and non-standard ports are refused."
+		d.Hint = "Use the registry's public host name on the standard port, or mirror the image to another registry."
+	case "registry_realm_not_allowed":
+		d.Message = host + " points to a token service on another host, so Legion did not send the credential there. Nothing was saved."
+		d.Hint = "Use a registry whose token service is on its own host."
+	case "registry_credential_rejected":
+		d.Message = host + " refused this credential, or it cannot read that image. Nothing was saved."
+		d.Hint = "Check the username and the token, and that the token can read the repository."
+	case "image_outside_prefix":
+		d.Hint = "Pass an image under the path prefix, or change --path-prefix."
+	case "registry_credential_exists":
+		d.Message = "A credential for that host and path prefix already exists."
+		if e.ResourceID != "" {
+			d.Hint = "Replace its secret: legion registry replace " + e.ResourceID + " --image <image> --token-stdin"
+		} else {
+			d.Hint = "See it with: legion registry list"
+		}
+	case "registry_credential_limit":
+		d.Message = "Your organization already has 20 registry credentials."
+		d.Hint = "Remove one you no longer need: legion registry remove <id>"
+	case "registry_credential_in_use":
+		d.Message = "Rentals still use this credential."
+		if len(e.Rentals) > 0 {
+			var parts []string
+			for _, r := range e.Rentals {
+				parts = append(parts, output.Sanitize(r.Name)+" ("+string(r.State)+")")
+			}
+			d.Message += " " + strings.Join(parts, ", ") + "."
+		}
+		d.Hint = "Stop or delete those rentals first: legion rental stop <rental>"
+	case "registry_credential_not_found":
+		d.Hint = "See your credentials with: legion registry list"
+	case "registry_credential_host_mismatch":
+		d.Hint = "That credential is for another host. Pick one for the image's host: legion registry list"
+	case "image_private":
+		d.Hint = "Save a read-only credential for the registry, then rent again: legion registry add --image <image>"
+	case "registry_credentials_unavailable":
+		d.Hint = "Registry credentials are not available right now. Try again later."
+	case "image_not_found", "image_registry_unavailable":
+		return false
+	default:
+		return false
+	}
+	return true
 }
