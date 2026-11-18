@@ -42,6 +42,7 @@ legion [flags]
 * [legion catalog](legion_catalog.md)	 - Browse Legion's starter images and premade models
 * [legion completion](legion_completion.md)	 - Generate a shell completion script
 * [legion config](legion_config.md)	 - Read and change settings of the current profile
+* [legion endpoints](legion_endpoints.md)	 - Serve models and ports behind one URL with access keys
 * [legion offer](legion_offer.md)	 - Browse GPU offers from hosts
 * [legion profile](legion_profile.md)	 - Manage named profiles (API URL, key, default output)
 * [legion registry](legion_registry.md)	 - Save registry credentials to rent private images

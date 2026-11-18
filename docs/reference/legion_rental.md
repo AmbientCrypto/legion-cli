@@ -47,7 +47,7 @@ legion rental [flags]
 * [legion rental delete](legion_rental_delete.md)	 - Delete a rental and destroy its workspace
 * [legion rental export](legion_rental_export.md)	 - Export a stopped rental's workspace and download it
 * [legion rental get](legion_rental_get.md)	 - Show one rental
-* [legion rental ingress](legion_rental_ingress.md)	 - Expose a port of a rental on the internet
+* [legion rental ingress](legion_rental_ingress.md)	 - Deprecated: use 'legion endpoints' to expose a port
 * [legion rental list](legion_rental_list.md)	 - List your rentals
 * [legion rental serve](legion_rental_serve.md)	 - Show the endpoint and API key of a premade model rental
 * [legion rental ssh](legion_rental_ssh.md)	 - SSH into a rental

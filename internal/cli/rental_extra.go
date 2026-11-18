@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/AmbientCrypto/legion-controller/api"
 	"github.com/google/uuid"
@@ -12,125 +11,6 @@ import (
 
 	"github.com/AmbientCrypto/legion-cli/internal/output"
 )
-
-// ---- ingress ----
-
-func (a *app) ingressCmd() *cobra.Command {
-	cmd := group(&cobra.Command{
-		Use:   "ingress",
-		Short: "Expose a port of a rental on the internet",
-		Long: `An ingress rule publishes an HTTP service in the rental at https://<rental>.<domain>, optionally
-limited to some source networks. SSH needs no rule.`,
-		Example: `  legion rental ingress add quiet-river-7k2f --port 8000
-  legion rental ingress list quiet-river-7k2f`,
-	})
-	list := &cobra.Command{
-		Use:     "list <rental>",
-		Short:   "List a rental's exposed ports",
-		Long:    "List the ingress rules of a rental with their public URL and status.",
-		Example: "  legion rental ingress list quiet-river-7k2f\n  legion rental ingress list quiet -o json",
-		Args:    args(0, 1),
-		RunE: func(cmd *cobra.Command, as []string) error {
-			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
-				resp, err := c.GetRentalNetworkWithResponse(ctx, r.Id)
-				if err := a.ok(resp, err); err != nil {
-					return err
-				}
-				n, err := need(resp.JSON200)
-				if err != nil {
-					return err
-				}
-				if !n.Ingress.Available {
-					a.info("Exposed ports are not available for this rental.")
-				}
-				return a.emit(listResult(n.Ingress.Rules, []string{"PORT", "URL", "STATUS", "SOURCES"}, []string{"ID", "DESCRIPTION"},
-					func(ru api.IngressRule) string { return ru.Id.String() },
-					func(ru api.IngressRule) []string {
-						src := "anyone"
-						if len(ru.Sources) > 0 {
-							src = strings.Join(ru.Sources, ",")
-						}
-						return []string{fmt.Sprint(ru.Port), ru.Url, string(ru.Status), src, ru.Id.String(), ptrOr(ru.Description, "")}
-					}))
-			})
-		},
-	}
-	var port int
-	var sources []string
-	var desc string
-	add := &cobra.Command{
-		Use:   "add <rental>",
-		Short: "Expose a port",
-		Long: `Publish the HTTP service listening on --port inside the rental. Without --source anyone on the
-internet can reach it; add --source <cidr> (repeatable, up to 16) to limit it. You are asked to confirm
-(or pass --yes).`,
-		Example: "  legion rental ingress add quiet-river-7k2f --port 8000\n  legion rental ingress add quiet-river-7k2f --port 8000 --source 203.0.113.0/24 --description api",
-		Args:    args(0, 1),
-		RunE: func(cmd *cobra.Command, as []string) error {
-			if port == 0 {
-				return usagef("legion rental ingress add --help", "missing required flag --port")
-			}
-			return a.withRental(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
-				who := "anyone on the internet"
-				if len(sources) > 0 {
-					who = "only " + strings.Join(sources, ", ")
-				}
-				msg := fmt.Sprintf("port %d of %s will be reachable on the internet by %s", port, r.Name, who)
-				if err := a.confirm("Expose it? "+msg+".", "refusing to expose a port without confirmation: "+msg); err != nil {
-					return err
-				}
-				req := api.CreateIngressRuleRequest{Protocol: api.IngressProtocolHTTP, Port: port, Sources: append([]string{}, sources...)}
-				if desc != "" {
-					req.Description = &desc
-				}
-				resp, err := c.CreateIngressRuleWithResponse(ctx, r.Id, &api.CreateIngressRuleParams{IdempotencyKey: uuid.NewString()}, req)
-				if err := a.ok(resp, err); err != nil {
-					return err
-				}
-				ru, err := need(resp.JSON201)
-				if err != nil {
-					return err
-				}
-				a.info("Exposed port %d at %s (status: %s; it goes live once the service answers).", ru.Port, san(ru.Url), ru.Status)
-				a.info("Remove: legion rental ingress remove %s %s", r.Name, ru.Id)
-				res := listResult([]api.IngressRule{*ru}, []string{"PORT", "URL", "STATUS"}, nil, func(ru api.IngressRule) string { return ru.Url },
-					func(ru api.IngressRule) []string { return []string{fmt.Sprint(ru.Port), ru.Url, string(ru.Status)} })
-				res.Data = ru
-				return a.emit(res)
-			})
-		},
-	}
-	add.Flags().IntVar(&port, "port", 0, "port the service listens on in the rental (not 22 or 22022)")
-	add.Flags().StringArrayVar(&sources, "source", nil, "allowed source CIDR, e.g. 203.0.113.0/24 (repeatable; default anyone)")
-	add.Flags().StringVar(&desc, "description", "", "a note shown with the rule")
-	remove := &cobra.Command{
-		Use:     "remove <rental> <rule-id>",
-		Aliases: []string{"rm"},
-		Short:   "Stop exposing a port",
-		Long:    "Delete an ingress rule. The public URL stops answering at once. Find ids with: legion rental ingress list -o wide.",
-		Example: "  legion rental ingress remove quiet-river-7k2f 6f1c... --yes\n  legion rental ingress remove quiet 6f1c...",
-		Args:    args(2, 2),
-		RunE: func(cmd *cobra.Command, as []string) error {
-			id, err := uuid.Parse(as[1])
-			if err != nil {
-				return usagef("legion rental ingress list "+as[0]+" -o wide", "%q is not a rule id", as[1])
-			}
-			return a.withRental(cmd, as[:1], func(ctx context.Context, c *api.ClientWithResponses, r *api.Rental) error {
-				if err := a.confirm(fmt.Sprintf("Remove ingress rule %s from %s? Its public URL stops working.", id, r.Name), "refusing to remove an ingress rule without confirmation"); err != nil {
-					return err
-				}
-				resp, err := c.DeleteIngressRuleWithResponse(ctx, r.Id, id)
-				if err := a.ok(resp, err); err != nil {
-					return err
-				}
-				a.info("Removed ingress rule %s.", id)
-				return nil
-			})
-		},
-	}
-	cmd.AddCommand(list, add, remove)
-	return cmd
-}
 
 // ---- backup ----
 

@@ -1,11 +1,11 @@
 ## legion rental ingress add
 
-Expose a port
+Deprecated: expose a port
 
 ### Synopsis
 
-Publish the HTTP service listening on --port inside the rental. Without --source anyone on the
-internet can reach it; add --source <cidr> (repeatable, up to 16) to limit it. You are asked to confirm
+Deprecated: same as 'legion endpoints create --rental <rental> --port <port> --access public'. Without --source
+anyone on the internet can reach the port; add --source <cidr> (repeatable) to limit it. You are asked to confirm
 (or pass --yes).
 
 ```
@@ -16,13 +16,12 @@ legion rental ingress add <rental> [flags]
 
 ```
   legion rental ingress add quiet-river-7k2f --port 8000
-  legion rental ingress add quiet-river-7k2f --port 8000 --source 203.0.113.0/24 --description api
+  legion rental ingress add quiet-river-7k2f --port 8000 --source 203.0.113.0/24
 ```
 
 ### Options
 
 ```
-      --description string   a note shown with the rule
   -h, --help                 help for add
       --port int             port the service listens on in the rental (not 22 or 22022)
       --source stringArray   allowed source CIDR, e.g. 203.0.113.0/24 (repeatable; default anyone)
@@ -43,5 +42,5 @@ legion rental ingress add <rental> [flags]
 
 ### SEE ALSO
 
-* [legion rental ingress](legion_rental_ingress.md)	 - Expose a port of a rental on the internet
+* [legion rental ingress](legion_rental_ingress.md)	 - Deprecated: use 'legion endpoints' to expose a port
 

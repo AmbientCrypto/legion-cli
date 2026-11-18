@@ -123,6 +123,12 @@ func describeAPI(e *client.Error, path string) Described {
 		}
 	case e.Code == "export_not_ready":
 		d.Hint = "Wait until it is ready: legion rental export get <rental> <export-id>"
+	case e.Code == "step_up_required":
+		d.Hint = "This action needs step-up verification, which only a browser session can give: do it in the Legion console"
+	case e.Code == "endpoint_name_taken":
+		d.Hint = "Pick another name, or see yours: legion endpoints list"
+	case e.Code == "host_visibility_required":
+		d.Hint = "Add --ack-host-visibility to acknowledge that provider hosts can see the workload"
 	case e.Code == "rate_limited" || e.Status == 429:
 		d.Hint = "Wait a moment and retry."
 	case e.Status == 404:
@@ -139,6 +145,8 @@ func listHint(path string) string {
 		return "legion rental list"
 	}
 	switch {
+	case strings.HasPrefix(path, "endpoints"), strings.HasPrefix(path, "endpoint"), strings.HasPrefix(path, "ep "):
+		return "legion endpoints list"
 	case strings.Contains(path, "ingress"):
 		return "legion rental ingress list <rental>"
 	case strings.Contains(path, "backup"):

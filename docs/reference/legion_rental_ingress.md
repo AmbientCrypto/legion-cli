@@ -1,11 +1,11 @@
 ## legion rental ingress
 
-Expose a port of a rental on the internet
+Deprecated: use 'legion endpoints' to expose a port
 
 ### Synopsis
 
-An ingress rule publishes an HTTP service in the rental at https://<rental>.<domain>, optionally
-limited to some source networks. SSH needs no rule.
+Deprecated. An exposed port is an endpoint now: use 'legion endpoints create --rental <rental> --port <port>'.
+These commands still work: each one does what its replacement does and prints the new command on stderr.
 
 ```
 legion rental ingress [flags]
@@ -40,7 +40,7 @@ legion rental ingress [flags]
 ### SEE ALSO
 
 * [legion rental](legion_rental.md)	 - Create, connect to, stop and delete rentals
-* [legion rental ingress add](legion_rental_ingress_add.md)	 - Expose a port
-* [legion rental ingress list](legion_rental_ingress_list.md)	 - List a rental's exposed ports
-* [legion rental ingress remove](legion_rental_ingress_remove.md)	 - Stop exposing a port
+* [legion rental ingress add](legion_rental_ingress_add.md)	 - Deprecated: expose a port
+* [legion rental ingress list](legion_rental_ingress_list.md)	 - Deprecated: list a rental's exposed ports
+* [legion rental ingress remove](legion_rental_ingress_remove.md)	 - Deprecated: stop exposing a port
 
