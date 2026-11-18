@@ -3,7 +3,7 @@ module github.com/AmbientCrypto/legion-cli
 go 1.27.4
 
 require (
-	github.com/AmbientCrypto/legion-controller v0.81.0
+	github.com/AmbientCrypto/legion-controller v0.83.1-0.20261118204640-86a5f3e8b6b5
 	github.com/google/uuid v1.6.0
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/ohler55/ojg v1.28.8

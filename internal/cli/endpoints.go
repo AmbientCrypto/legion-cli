@@ -230,6 +230,7 @@ func epDetail(w io.Writer, e api.Endpoint) {
 	t := e.Target
 	if epAutoscaled(e) {
 		if tp := t.Template; tp != nil {
+			defer writeStoredConfig(w, tp.Env, tp.ModelSettings, tp.Command, tp.Args)
 			src := tp.Image
 			if tp.CatalogId != nil && *tp.CatalogId != "" {
 				src = *tp.CatalogId
@@ -342,6 +343,9 @@ func (a *app) epUpdateCmd() *cobra.Command {
 	var capStr, catalog, image, access string
 	var sources []string
 	var revision int64
+	var cf configFlags
+	var unsetEnv []string
+	var clearCommand, clearArgs, clearSettings bool
 	cmd := &cobra.Command{
 		Use:   "update <endpoint>",
 		Short: "Change an endpoint's access, scaling, hardware, price ceiling or cap",
@@ -351,7 +355,13 @@ func (a *app) epUpdateCmd() *cobra.Command {
 Scaling, hardware, --catalog and --image apply to autoscaled endpoints; changes that can raise spend show the new
 cost floor and ceiling and ask for confirmation (or pass --yes). Config changes roll one replica at a time with one
 surge replica, which counts against the maximum and the monthly cap. --revision refuses the change when the endpoint
-was edited meanwhile. Turn autoscaling on or off with 'legion endpoints autoscale'.`,
+was edited meanwhile. Turn autoscaling on or off with 'legion endpoints autoscale'.
+
+Container configuration (autoscaled endpoints): --env and --secret-env add or change variables and --unset-env removes
+them; the others stay. A secret you do not name keeps its stored value. --setting changes the named model settings,
+--command and --arg replace the entrypoint and arguments of your own image; --clear-settings, --clear-command and
+--clear-args remove them. Any of these changes the replica template, so replicas are replaced one at a time with one
+surge replica and a running replica restarts. Anything in the container can be read by the provider's machine.`,
 		Example: "  legion endpoints update chat --max 4\n  legion endpoints update chat --access keys\n  legion endpoints update chat --gpu H100 --gpu A100 --max-price 3 --monthly-cap 600",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
@@ -360,11 +370,24 @@ was edited meanwhile. Turn autoscaling on or off with 'legion endpoints autoscal
 			hwChanged := hf.changed(cmd)
 			capChanged := fl.Changed("monthly-cap")
 			accessChanged := access != "" || len(sources) > 0
+			cfgChanged := cf.any() || len(unsetEnv) > 0 || clearCommand || clearArgs || clearSettings
+			if (clearCommand && len(cf.command) > 0) || (clearArgs && len(cf.arg) > 0) || (clearSettings && len(cf.setting) > 0) {
+				return usagef("legion endpoints update --help", "do not combine --clear-command, --clear-args or --clear-settings with the flag that sets the same thing")
+			}
 			if access != "" && access != "public" && access != "keys" {
 				return usagef("legion endpoints update --help", "--access must be public or keys, got %q", access)
 			}
-			if scIn == nil && !hwChanged && !capChanged && !accessChanged && catalog == "" && image == "" {
-				return usagef("legion endpoints update --help", "nothing to change: pass at least one of --access, --source, --min, --max, --scale-to-zero, --target-concurrency, --gpu, --max-price, --spot, --monthly-cap, --catalog, --image")
+			if scIn == nil && !hwChanged && !capChanged && !accessChanged && catalog == "" && image == "" && !cfgChanged {
+				return usagef("legion endpoints update --help", "nothing to change: pass at least one of --env, --secret-env, --unset-env, --setting, --command, --arg, --access, --source, --min, --max, --scale-to-zero, --target-concurrency, --gpu, --max-price, --spot, --monthly-cap, --catalog, --image")
+			}
+			cfg, err := a.resolveConfig(cmd, &cf, "endpoints update")
+			if err != nil {
+				return err
+			}
+			for _, n := range unsetEnv {
+				if err := checkEnvName(n); err != nil {
+					return usagef("legion endpoints update --help", "--unset-env: %v", err)
+				}
 			}
 			return a.withEndpoint(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Endpoint) error {
 				req := api.UpdateEndpointRequest{}
@@ -372,8 +395,58 @@ was edited meanwhile. Turn autoscaling on or off with 'legion endpoints autoscal
 					req.Revision = &revision
 				}
 				spend := false
-				if scIn != nil || hwChanged || catalog != "" || image != "" {
+				if cfgChanged && !epAutoscaled(*e) {
+					return usagef("legion endpoints get "+e.Name, "%s exposes a rental's port; container configuration belongs to autoscaled endpoints (for a rental: legion rental env)", e.Name)
+				}
+				if scIn != nil || hwChanged || catalog != "" || image != "" || cfgChanged {
 					tc := api.EndpointTargetChange{Scaling: scIn}
+					if cfgChanged {
+						tp := e.Target.Template
+						isCatalog := catalog != "" || (image == "" && tp != nil && tp.CatalogId != nil && *tp.CatalogId != "")
+						if err := checkEndpointConfig(cfg, isCatalog); err != nil {
+							return err
+						}
+						var curEnv []api.EnvVar
+						var curSet *api.ModelSettings
+						if tp != nil {
+							curEnv, curSet = ptrOrSlice(tp.Env), tp.ModelSettings
+						}
+						if cf.any() || len(unsetEnv) > 0 {
+							var set []envVar
+							if cfg != nil {
+								set = cfg.Env
+							}
+							if len(set) > 0 || len(unsetEnv) > 0 {
+								tc.Env = ptr(mergeEnv(curEnv, set, unsetEnv))
+							}
+							if cfg != nil && len(cfg.Settings) > 0 {
+								tc.ModelSettings = ptr(mergeSettings(curSet, cfg.Settings))
+							}
+							tc.Command, tc.Args = cfg.commandOverride(), cfg.argsOverride()
+						}
+						if clearSettings {
+							tc.ModelSettings = &api.ModelSettings{}
+						}
+						if clearCommand {
+							tc.Command = ptr(api.CommandOverride{})
+						}
+						if clearArgs {
+							tc.Args = ptr(api.CommandOverride{})
+						}
+						if !a.quiet {
+							w := a.env.Stderr
+							if tc.Env != nil {
+								for _, v := range *tc.Env {
+									if ptrOr(v.Secret, false) {
+										fmt.Fprintf(w, "  Env:       %s = (secret, hidden)\n", san(v.Name))
+									} else {
+										fmt.Fprintf(w, "  Env:       %s = %s\n", san(v.Name), san(ptrOr(v.Value, "")))
+									}
+								}
+							}
+							fmt.Fprintln(w, "This changes the replica template: replicas are replaced one at a time, so a running replica restarts.")
+						}
+					}
 					if hwChanged {
 						hw, err := hf.apply(cmd, epHardware(*e))
 						if err != nil {
@@ -455,6 +528,11 @@ was edited meanwhile. Turn autoscaling on or off with 'legion endpoints autoscal
 	fl.StringVar(&catalog, "catalog", "", "switch to this catalog model id")
 	fl.StringVar(&image, "image", "", "switch to this container image")
 	fl.Int64Var(&revision, "revision", 0, "refuse the change unless the endpoint is at this revision")
+	cf.register(cmd, "your own image")
+	fl.StringArrayVar(&unsetEnv, "unset-env", nil, "remove this environment variable (repeatable)")
+	fl.BoolVar(&clearSettings, "clear-settings", false, "remove all model settings (the image defaults apply)")
+	fl.BoolVar(&clearCommand, "clear-command", false, "remove the entrypoint override")
+	fl.BoolVar(&clearArgs, "clear-args", false, "remove the arguments override")
 	return cmd
 }
 

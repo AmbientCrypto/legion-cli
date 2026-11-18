@@ -80,6 +80,17 @@ func (f *configFlags) register(cmd *cobra.Command, own string) {
 	fl.StringArrayVar(&f.arg, "arg", nil, "replace the image's default arguments of "+own+": one item per flag (repeatable)")
 }
 
+// registerEnvOnly registers just the variable flags (rental env set).
+func (f *configFlags) registerEnvOnly(cmd *cobra.Command) {
+	fl := cmd.Flags()
+	fl.StringArrayVar(&f.env, "env", nil, "environment variable NAME=value (repeatable). Not for secrets: use --secret-env")
+	fl.StringArrayVar(&f.secretEnv, "secret-env", nil, "secret environment variable NAME (repeatable); the value is read from stdin (one line per secret) or a hidden prompt")
+	for _, n := range []string{"setting", "command", "arg"} {
+		fl.StringArrayVar(map[string]*[]string{"setting": &f.setting, "command": &f.command, "arg": &f.arg}[n], n, nil, "")
+		_ = fl.MarkHidden(n)
+	}
+}
+
 func (f *configFlags) any() bool {
 	return len(f.env)+len(f.secretEnv)+len(f.setting)+len(f.command)+len(f.arg) > 0
 }

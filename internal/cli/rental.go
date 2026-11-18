@@ -31,7 +31,7 @@ Leave the name out on a terminal to pick from a list.`,
 	})
 	cmd.AddCommand(a.rentalListCmd(), a.rentalGetCmd(), a.rentalCreateCmd(), a.rentalStopCmd(), a.rentalStartCmd(),
 		a.rentalDeleteCmd(), a.rentalWaitCmd(), a.rentalSSHCmd(false), a.rentalSSHConfigCmd(), a.rentalChargesCmd(),
-		a.rentalServeCmd(), a.ingressCmd(), a.backupCmd(), a.exportCmd())
+		a.rentalServeCmd(), a.rentalEnvCmd(), a.ingressCmd(), a.backupCmd(), a.exportCmd())
 	return cmd
 }
 
@@ -211,6 +211,7 @@ func rentalDetail(w io.Writer, st ui.Style, r api.Rental) {
 	if r.Serve != nil {
 		fmt.Fprintf(w, "Serving:    %s (%s)  see: legion rental serve %s\n", san(r.Serve.Model), r.Serve.Kind, r.Name)
 	}
+	writeStoredConfig(w, r.Env, r.ModelSettings, r.Command, r.Args)
 	if r.Ssh != nil && r.State == api.RentalStateRunning {
 		if argv, err := sshArgv(r, ""); err == nil {
 			fmt.Fprintf(w, "SSH:        %s\n", shellJoin(append([]string{"ssh"}, argv...)))
