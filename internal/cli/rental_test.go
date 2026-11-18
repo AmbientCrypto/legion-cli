@@ -355,34 +355,3 @@ func TestRentalCharges(t *testing.T) {
 	out, _ := h.mustRun("rental", "charges", "quiet-river-7k2f")
 	contains(t, "charges", out, "$5.17", "$0.12", "1h2m")
 }
-
-func TestRentalIngress(t *testing.T) {
-	h := newHarness(t)
-	rs := h.rentals()
-	id := rs[0].Id.String()
-	rule := api.IngressRule{Id: uid(80), Protocol: "http", Port: 8000, Sources: []string{}, Hostname: "quiet-river-7k2f.ambi.run", Url: "https://quiet-river-7k2f.ambi.run", Status: "provisioning", CreatedAt: rs[0].CreatedAt}
-	h.reply("GET /v1/rentals/"+id+"/network", 200, api.RentalNetwork{Ingress: api.RentalIngress{Available: true, Rules: []api.IngressRule{rule}}})
-	h.reply("POST /v1/rentals/"+id+"/ingress-rules", 201, rule)
-	h.reply("DELETE /v1/rentals/"+id+"/ingress-rules/"+uidS(80), 204, nil)
-	out, _ := h.mustRun("rental", "ingress", "list", "quiet-river-7k2f")
-	contains(t, "list", out, "8000", "https://quiet-river-7k2f.ambi.run")
-	_, errs := h.mustRun("rental", "ingress", "add", "quiet-river-7k2f", "--port", "8000", "--yes", "--source", "203.0.113.0/24", "--description", "api")
-	c := h.last("POST", "/v1/rentals/"+id+"/ingress-rules")
-	req := body[api.CreateIngressRuleRequest](t, c)
-	if req.Port != 8000 || req.Protocol != "http" || len(req.Sources) != 1 || req.Sources[0] != "203.0.113.0/24" || c.Header.Get("Idempotency-Key") == "" {
-		t.Fatalf("%+v", req)
-	}
-	contains(t, "add", errs, "https://quiet-river-7k2f.ambi.run")
-	_, _, code := h.run("rental", "ingress", "add", "quiet-river-7k2f", "--yes")
-	if code != 2 {
-		t.Fatalf("missing --port: %d", code)
-	}
-	h.mustRun("rental", "ingress", "remove", "quiet-river-7k2f", uidS(80), "--yes")
-	if h.count("DELETE", "/v1/rentals/"+id+"/ingress-rules/"+uidS(80)) != 1 {
-		t.Fatal("not removed")
-	}
-	_, _, code = h.run("rental", "ingress", "remove", "quiet-river-7k2f", uidS(80))
-	if code != 2 {
-		t.Fatalf("remove without --yes on non-tty: %d", code)
-	}
-}

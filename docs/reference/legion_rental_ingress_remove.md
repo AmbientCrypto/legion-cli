@@ -1,10 +1,10 @@
 ## legion rental ingress remove
 
-Stop exposing a port
+Deprecated: stop exposing a port
 
 ### Synopsis
 
-Delete an ingress rule. The public URL stops answering at once. Find ids with: legion rental ingress list -o wide.
+Deprecated: same as 'legion endpoints delete <endpoint>'. <rule-id> is the old rule id (see 'legion rental ingress list -o wide'), or an endpoint name or id.
 
 ```
 legion rental ingress remove <rental> <rule-id> [flags]
@@ -13,8 +13,8 @@ legion rental ingress remove <rental> <rule-id> [flags]
 ### Examples
 
 ```
-  legion rental ingress remove quiet-river-7k2f 6f1c... --yes
-  legion rental ingress remove quiet 6f1c...
+  legion rental ingress remove quiet-river-7k2f quiet-river-7k2f --yes
+  legion rental ingress remove quiet 6f1c... --yes
 ```
 
 ### Options
@@ -38,5 +38,5 @@ legion rental ingress remove <rental> <rule-id> [flags]
 
 ### SEE ALSO
 
-* [legion rental ingress](legion_rental_ingress.md)	 - Expose a port of a rental on the internet
+* [legion rental ingress](legion_rental_ingress.md)	 - Deprecated: use 'legion endpoints' to expose a port
 

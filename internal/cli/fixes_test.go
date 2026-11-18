@@ -258,10 +258,9 @@ func TestStartAndIngressConfirm(t *testing.T) {
 	_, e = h.mustRun("rental", "start", "quiet-meadow-3x9a", "--async")
 	contains(t, "start prompt", e, "$5.00 per hour")
 	h.tty = false
-	rid := rs[0].Id.String()
-	h.reply("POST /v1/rentals/"+rid+"/ingress-rules", 201, api.IngressRule{Id: uid(80), Port: 8000, Url: "https://x.example", Status: "provisioning", Sources: []string{}})
+	h.reply("POST /v1/endpoints", 201, api.EndpointCreated{Endpoint: portEndpoint(api.EndpointAccessPublic)})
 	_, e, c = h.run("rental", "ingress", "add", "quiet-river-7k2f", "--port", "8000")
-	if c != 2 || h.count("POST", "/v1/rentals/"+rid+"/ingress-rules") != 0 {
+	if c != 2 || h.count("POST", "/v1/endpoints") != 0 {
 		t.Fatalf("ingress add without --yes: %d", c)
 	}
 	contains(t, "ingress", e, "internet")

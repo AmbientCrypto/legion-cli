@@ -86,7 +86,7 @@ func (a *app) root() *cobra.Command {
 	ssh := a.rentalSSHCmd(true)
 	ssh.Use, ssh.Short = "ssh <rental> [-- command...]", "SSH into a rental (shortcut for 'legion rental ssh')"
 	add(grpStart, a.authCmd(), a.whoamiCmd(), a.offerCmd(), a.catalogCmd(), ssh)
-	add(grpCompute, a.rentalCmd())
+	add(grpCompute, a.rentalCmd(), a.endpointsCmd())
 	add(grpAccount, a.sshKeyCmd(), a.registryCmd(), a.billingCmd(), a.apiKeyCmd())
 	add(grpOther, a.configCmd(), a.profileCmd(), a.versionCmd(), a.updateCmd(), a.completionCmd())
 	root.AddCommand(topic("environment", "How flags, environment variables and profiles combine", environmentHelp))

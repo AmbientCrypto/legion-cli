@@ -1,10 +1,10 @@
 ## legion rental ingress list
 
-List a rental's exposed ports
+Deprecated: list a rental's exposed ports
 
 ### Synopsis
 
-List the ingress rules of a rental with their public URL and status.
+Deprecated: same as 'legion endpoints list --rental <rental>'.
 
 ```
 legion rental ingress list <rental> [flags]
@@ -38,5 +38,5 @@ legion rental ingress list <rental> [flags]
 
 ### SEE ALSO
 
-* [legion rental ingress](legion_rental_ingress.md)	 - Expose a port of a rental on the internet
+* [legion rental ingress](legion_rental_ingress.md)	 - Deprecated: use 'legion endpoints' to expose a port
 
