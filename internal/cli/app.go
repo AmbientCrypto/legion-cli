@@ -42,7 +42,8 @@ type Env struct {
 	Executable                     func() (string, error)                 // the binary legion update replaces
 	Now                            func() time.Time                       // the update check's clock
 	Home                           string
-	Poll                           time.Duration // wait loop interval
+	Poll                           time.Duration                        // wait loop interval
+	After                          func(time.Duration) <-chan time.Time // the logs follow loop's timer; nil is time.After
 	Version, Commit, Date          string
 }
 

@@ -109,6 +109,9 @@ func (s Style) Red(t string) string   { return s.wrap("31", t) }
 func (s Style) Green(t string) string { return s.wrap("32", t) }
 func (s Style) Dim(t string) string   { return s.wrap("2", t) }
 
+// Yellow is for warnings.
+func (s Style) Yellow(t string) string { return s.wrap("33", t) }
+
 // Spinner draws a one-line spinner on a terminal. Disabled, it does nothing.
 type Spinner struct {
 	w        io.Writer

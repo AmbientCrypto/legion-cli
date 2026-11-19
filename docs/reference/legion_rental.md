@@ -49,6 +49,7 @@ legion rental [flags]
 * [legion rental export](legion_rental_export.md)	 - Export a stopped rental's workspace and download it
 * [legion rental get](legion_rental_get.md)	 - Show one rental
 * [legion rental list](legion_rental_list.md)	 - List your rentals
+* [legion rental logs](legion_rental_logs.md)	 - Show a rental's logs, or follow them live
 * [legion rental serve](legion_rental_serve.md)	 - Show the service URL and API key of a premade model rental
 * [legion rental ssh](legion_rental_ssh.md)	 - SSH into a rental
 * [legion rental ssh-config](legion_rental_ssh-config.md)	 - Print an ~/.ssh/config block for a rental

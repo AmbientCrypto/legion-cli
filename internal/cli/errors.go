@@ -143,6 +143,14 @@ func describeAPI(e *client.Error, path string) Described {
 		d.Hint = "Change the service instead: legion services update <service>"
 	case e.Code == "host_visibility_required":
 		d.Hint = "Add --ack-host-visibility to acknowledge that provider hosts can see the workload"
+	case e.Code == "logs_upstream_error":
+		d.Message = "Could not read the logs right now."
+		d.Hint = "Try again in a moment."
+	case e.Code == "logs_unavailable":
+		d.Message = "Logs are not available right now."
+		d.Hint = "Try again later. If it keeps happening, contact Ambient support."
+	case e.Code == "invalid_logs_query":
+		d.Hint = "Check the values you passed: legion " + path + " --help"
 	case e.Code == "rate_limited" || e.Status == 429:
 		d.Hint = "Wait a moment and retry."
 	case e.Status == 404:
