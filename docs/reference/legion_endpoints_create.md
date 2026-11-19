@@ -39,7 +39,10 @@ legion endpoints create [name] [flags]
 ```
       --access string            public (anyone; default for a rental port) or keys (callers need an access key; default for a model)
       --ack-host-visibility      acknowledge that provider hosts can see the workload (once per organization)
+      --arg stringArray          replace the image's default arguments of your own --image: one item per flag (repeatable)
       --catalog string           catalog model id to serve (see: legion catalog list)
+      --command stringArray      replace the image entrypoint of your own --image: one item per flag, for example --command python --command server.py (repeatable)
+      --env stringArray          environment variable NAME=value for the container (repeatable). Not for secrets: they would show in your shell history; use --secret-env
       --gpu stringArray          only use this GPU model, for example H100 (repeatable, unordered: the cheapest fitting one is rented). Default: any
       --gpu-counts string        own image: GPU counts a replica may use, comma separated from 1,2,4,8 (default 1,2,4,8)
       --health-path string       path polled to see a replica is ready (default /v1/models)
@@ -58,7 +61,9 @@ legion endpoints create [name] [flags]
       --port int                 with --rental: the port to expose; with --image: the port the service listens on
       --rental string            expose a port of this rental (name, id or prefix) instead of serving a model
       --scale-to-zero            let the endpoint scale down to no replicas when idle (cold requests then wait for a replica)
+      --secret-env stringArray   secret environment variable NAME (repeatable). The value is read from stdin (one line per secret) or a hidden prompt, stored encrypted and never shown again
       --served-model string      with --image: the model name the service reports
+      --setting stringArray      model setting key=value for a catalog model, for example max_model_len=32768 (repeatable; see the catalog entry's settings)
       --source stringArray       allowed source CIDR, for example 203.0.113.0/24 (repeatable; either access mode)
       --spot                     use spot (interruptible) capacity: cheaper, but replicas can be preempted
       --target-concurrency int   concurrent requests per replica before another is added

@@ -29,15 +29,20 @@ legion rental create [flags]
 ### Options
 
 ```
+      --arg stringArray              replace the image's default arguments of an image of your own: one item per flag (repeatable)
       --async                        return as soon as the rental is created (same as --wait=false)
       --catalog string               starter image or premade model id from 'legion catalog list'
+      --command stringArray          replace the image entrypoint of an image of your own: one item per flag, for example --command python --command server.py (repeatable)
       --dry-run                      print the preview and exit without renting
+      --env stringArray              environment variable NAME=value for the container (repeatable). Not for secrets: they would show in your shell history; use --secret-env
       --gpus int                     number of GPUs (default 1, or what the catalog entry needs)
   -h, --help                         help for create
       --image string                 container image, for example pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
       --max-price string             most you will pay per GPU-hour in dollars, platform fee included, for example 2.60 (default: the price shown)
       --offer string                 host to rent: id or name from 'legion offer list'
       --registry-credential string   registry credential id for a private image (default: the one matching the image's host and path; see 'legion registry list')
+      --secret-env stringArray       secret environment variable NAME (repeatable). The value is read from stdin (one line per secret) or a hidden prompt, stored encrypted and never shown again
+      --setting stringArray          model setting key=value for a catalog model, for example max_model_len=32768 (repeatable; see the catalog entry's settings)
       --ssh-key string               saved SSH key (id, label or fingerprint) or a path to a .pub file
       --wait                         wait until the rental is running (default true)
       --wait-timeout duration        how long to wait for the rental to run (default 10m0s)

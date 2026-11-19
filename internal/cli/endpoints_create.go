@@ -246,6 +246,7 @@ func (a *app) epCreateCmd() *cobra.Command {
 	var sources []string
 	var port int
 	var ack bool
+	var cf configFlags
 	cmd := &cobra.Command{
 		Use:   "create [name]",
 		Short: "Create an endpoint: expose a rental's port, or serve a model on autoscaled GPUs",
@@ -294,6 +295,9 @@ On a terminal anything missing is asked for. With keys access the first key is p
 				}
 				portMode = i == 0
 			}
+			if portMode && cf.any() {
+				return usagef("legion endpoints create --help", "--env, --secret-env, --setting, --command and --arg configure the replicas of a model or image; they do not apply to an exposed rental port (set the rental's own with 'legion rental create' or 'legion rental env')")
+			}
 			if portMode {
 				return a.createPortEndpoint(cmd, name, rental, port, access, sources, kind, keyName, keyExpires)
 			}
@@ -314,6 +318,10 @@ On a terminal anything missing is asked for. With keys access the first key is p
 			}
 			if image != "" && port == 0 && !interactive {
 				return usagef("legion endpoints create --help", "--image needs --port, the port the service listens on")
+			}
+			cfg, err := a.resolveConfig(cmd, &cf, "endpoints create")
+			if err != nil {
+				return err
 			}
 			c, err := a.api()
 			if err != nil {
@@ -458,7 +466,16 @@ On a terminal anything missing is asked for. With keys access the first key is p
 				}
 				capM = &m
 			}
+			if err := checkEndpointConfig(cfg, catalog != ""); err != nil {
+				return err
+			}
 			a.summary(name, hw, sc, est, capM)
+			if !cfg.empty() && !a.quiet {
+				cfg.write(a.env.Stderr)
+				if len(cfg.Env) > 0 {
+					fmt.Fprintln(a.env.Stderr, "  Note:      anything in the container, including these variables, can be read by the provider's machine.")
+				}
+			}
 			ex, never, err := parseExpiry(keyExpires)
 			if err != nil {
 				return err
@@ -481,6 +498,7 @@ On a terminal anything missing is asked for. With keys access the first key is p
 			if fl.Changed("health-path") {
 				tgt.HealthPath = &healthPath
 			}
+			tgt.Env, tgt.ModelSettings, tgt.Command, tgt.Args = cfg.envInputs(), cfg.modelSettings(), cfg.commandOverride(), cfg.argsOverride()
 			req := api.CreateEndpointRequest{Name: &name, Target: tgt, MonthlySpendCap: capM}
 			if kind != "" {
 				req.Protocol = ptr(api.EndpointProtocol(kind))
@@ -516,8 +534,24 @@ On a terminal anything missing is asked for. With keys access the first key is p
 	fl.StringVar(&capStr, "monthly-cap", "", "monthly spend cap in dollars (UTC calendar month), required for a model")
 	fl.StringVar(&keyName, "key-name", "default", "name of the first access key")
 	fl.StringVar(&keyExpires, "key-expires", "", "first key expiry: 7d, 30d, 90d, 365d or never (default: the platform's, 90d)")
+	cf.register(cmd, "your own --image")
 	fl.BoolVar(&ack, "ack-host-visibility", false, "acknowledge that provider hosts can see the workload (once per organization)")
 	return cmd
+}
+
+// checkEndpointConfig refuses what the platform would refuse: settings are for
+// catalog models, command and args for your own image.
+func checkEndpointConfig(cfg *containerConfig, catalog bool) error {
+	if cfg == nil {
+		return nil
+	}
+	if len(cfg.Settings) > 0 && !catalog {
+		return usagef("legion catalog list", "--setting is for a catalog model: use --catalog <model>")
+	}
+	if (cfg.hasCommand || cfg.hasArgs) && catalog {
+		return usagef("Serve your own image with --image to set --command or --arg.", "--command and --arg are only for your own images, not catalog entries")
+	}
+	return nil
 }
 
 func accessInput(mode string, sources []string) *api.EndpointAccess {

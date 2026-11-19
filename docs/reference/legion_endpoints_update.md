@@ -12,6 +12,12 @@ cost floor and ceiling and ask for confirmation (or pass --yes). Config changes 
 surge replica, which counts against the maximum and the monthly cap. --revision refuses the change when the endpoint
 was edited meanwhile. Turn autoscaling on or off with 'legion endpoints autoscale'.
 
+Container configuration (autoscaled endpoints): --env and --secret-env add or change variables and --unset-env removes
+them; the others stay. A secret you do not name keeps its stored value. --setting changes the named model settings,
+--command and --arg replace the entrypoint and arguments of your own image; --clear-settings, --clear-command and
+--clear-args remove them. Any of these changes the replica template, so replicas are replaced one at a time with one
+surge replica and a running replica restarts. Anything in the container can be read by the provider's machine.
+
 ```
 legion endpoints update <endpoint> [flags]
 ```
@@ -28,7 +34,13 @@ legion endpoints update <endpoint> [flags]
 
 ```
       --access string            public (anyone) or keys (callers need an access key)
+      --arg stringArray          replace the image's default arguments of your own image: one item per flag (repeatable)
       --catalog string           switch to this catalog model id
+      --clear-args               remove the arguments override
+      --clear-command            remove the entrypoint override
+      --clear-settings           remove all model settings (the image defaults apply)
+      --command stringArray      replace the image entrypoint of your own image: one item per flag, for example --command python --command server.py (repeatable)
+      --env stringArray          environment variable NAME=value for the container (repeatable). Not for secrets: they would show in your shell history; use --secret-env
       --gpu stringArray          only use this GPU model, for example H100 (repeatable, unordered: the cheapest fitting one is rented). Default: any
       --gpu-counts string        own image: GPU counts a replica may use, comma separated from 1,2,4,8 (default 1,2,4,8)
   -h, --help                     help for update
@@ -41,9 +53,12 @@ legion endpoints update <endpoint> [flags]
       --placement string         eligible_hosts (default) or own_hosts
       --revision int             refuse the change unless the endpoint is at this revision
       --scale-to-zero            let the endpoint scale down to no replicas when idle (cold requests then wait for a replica)
+      --secret-env stringArray   secret environment variable NAME (repeatable). The value is read from stdin (one line per secret) or a hidden prompt, stored encrypted and never shown again
+      --setting stringArray      model setting key=value for a catalog model, for example max_model_len=32768 (repeatable; see the catalog entry's settings)
       --source stringArray       allowed source CIDR, for example 203.0.113.0/24 (repeatable)
       --spot                     use spot (interruptible) capacity: cheaper, but replicas can be preempted
       --target-concurrency int   concurrent requests per replica before another is added
+      --unset-env stringArray    remove this environment variable (repeatable)
 ```
 
 ### Options inherited from parent commands

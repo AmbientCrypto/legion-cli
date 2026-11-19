@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -43,8 +44,14 @@ type Preview struct {
 	OwnUseFeeBps *int       `json:"own_use_fee_bps,omitempty"`
 	OwnUseFloor  *api.Money `json:"own_use_fee_floor_per_gpu_hour,omitempty"`
 	// RenterFeeBps is the platform fee already inside every price shown (LGN-549).
-	RenterFeeBps  *int       `json:"renter_fee_bps,omitempty"`
-	ListedPrice   *api.Money `json:"listed_price_per_gpu_hour,omitempty"`
+	RenterFeeBps *int       `json:"renter_fee_bps,omitempty"`
+	ListedPrice  *api.Money `json:"listed_price_per_gpu_hour,omitempty"`
+	// Env, ModelSettings, Command and Args are the container configuration (LGN-628); a secret has no value here.
+	Env           []api.EnvVar         `json:"env,omitempty"`
+	ModelSettings *api.ModelSettings   `json:"model_settings,omitempty"`
+	Command       *api.CommandOverride `json:"command,omitempty"`
+	Args          *api.CommandOverride `json:"args,omitempty"`
+	config        *containerConfig
 	gpusDefaulted bool
 }
 
@@ -83,6 +90,10 @@ func (p Preview) write(w io.Writer, title string) {
 		fmt.Fprintf(w, " (%s)", san(p.SSHFingerprint))
 	}
 	fmt.Fprintln(w)
+	p.config.write(w)
+	if len(p.Env) > 0 {
+		fmt.Fprintln(w, "  Note:      anything in the container, including these variables, can be read by the provider's machine.")
+	}
 }
 
 func (a *app) rentalCreateCmd() *cobra.Command {
@@ -91,6 +102,7 @@ func (a *app) rentalCreateCmd() *cobra.Command {
 		gpus                                                          int
 		async, dryRun                                                 bool
 		wait                                                          = true
+		cf                                                            configFlags
 		waitTimeout                                                   time.Duration
 	)
 	cmd := &cobra.Command{
@@ -123,6 +135,10 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 					return err
 				}
 				credID = &id
+			}
+			cfg, err := a.resolveConfig(cmd, &cf, "rental create")
+			if err != nil {
+				return err
 			}
 			c, err := a.api()
 			if err != nil {
@@ -161,6 +177,9 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 			}
 
 			if err := a.chooseImage(ctx, c, offer, image, catalogID, &req, &pv); err != nil {
+				return err
+			}
+			if err := applyRentalConfig(cfg, &req, &pv); err != nil {
 				return err
 			}
 			pv.gpusDefaulted = gpus == 0
@@ -207,6 +226,7 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 				if registryCred != "" {
 					cmdline = append(cmdline, "--registry-credential", registryCred)
 				}
+				cmdline = append(cmdline, configFlagsLine(cfg)...)
 				a.info("Dry run: nothing rented. To rent: %s --yes", shellJoin(cmdline))
 				return a.emit(output.Result{Data: pv, Names: []string{pv.HostName}, Human: func(w io.Writer) { pv.write(w, "Rental preview") }})
 			}
@@ -273,8 +293,65 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 	f.BoolVar(&async, "async", false, "return as soon as the rental is created (same as --wait=false)")
 	f.DurationVar(&waitTimeout, "wait-timeout", 10*time.Minute, "how long to wait for the rental to run")
 	f.BoolVar(&dryRun, "dry-run", false, "print the preview and exit without renting")
+	cf.register(cmd, "an image of your own")
 	_ = cmd.Flags().MarkHidden("host")
 	return cmd
+}
+
+// applyRentalConfig puts the container configuration on the request and the
+// preview, refusing what the platform would refuse so nothing is asked twice.
+func applyRentalConfig(cfg *containerConfig, req *api.CreateRentalRequest, pv *Preview) error {
+	if cfg.empty() {
+		return nil
+	}
+	catalog := pv.CatalogID != ""
+	if len(cfg.Settings) > 0 && (!catalog || req.Serve == nil) {
+		return usagef("legion catalog list", "--setting is for a catalog model: add --catalog <model>")
+	}
+	if (cfg.hasCommand || cfg.hasArgs) && catalog {
+		return usagef("Run your own image with --image to set --command or --arg.", "--command and --arg are only for your own images, not catalog entries")
+	}
+	req.Env, req.ModelSettings, req.Command, req.Args = cfg.envInputs(), cfg.modelSettings(), cfg.commandOverride(), cfg.argsOverride()
+	pv.config, pv.ModelSettings, pv.Command, pv.Args = cfg, req.ModelSettings, req.Command, req.Args
+	for _, e := range cfg.Env {
+		ev := api.EnvVar{Name: e.Name, Secret: e.Secret}
+		if !e.Secret {
+			ev.Value = ptr(e.Value)
+		}
+		pv.Env = append(pv.Env, ev)
+	}
+	return nil
+}
+
+// configFlagsLine rebuilds the configuration flags for a dry-run's rent
+// command. A secret is named, never given: the value is asked for again.
+func configFlagsLine(cfg *containerConfig) []string {
+	var out []string
+	if cfg == nil {
+		return nil
+	}
+	for _, e := range cfg.Env {
+		if e.Secret {
+			out = append(out, "--secret-env", e.Name)
+		} else {
+			out = append(out, "--env", e.Name+"="+e.Value)
+		}
+	}
+	keys := make([]string, 0, len(cfg.Settings))
+	for k := range cfg.Settings {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		out = append(out, "--setting", fmt.Sprintf("%s=%v", k, cfg.Settings[k]))
+	}
+	for _, c := range cfg.Command {
+		out = append(out, "--command", c)
+	}
+	for _, c := range cfg.Args {
+		out = append(out, "--arg", c)
+	}
+	return out
 }
 
 func (a *app) balance(ctx context.Context, c *api.ClientWithResponses) (*api.BillingAccount, error) {
