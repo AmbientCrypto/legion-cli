@@ -246,6 +246,32 @@ func svcResult(es []api.Service) output.Result {
 		})
 }
 
+// replicaWebTerminalInput is --replica-web-terminal (LGN-651): off turns the
+// web terminal off on new replicas; organization and creator-and-owners turn it
+// on and say who may open it.
+func replicaWebTerminalInput(help, v string) (*api.ServiceReplicaWebTerminalInput, error) {
+	switch v {
+	case "off":
+		return &api.ServiceReplicaWebTerminalInput{Enabled: ptr(false)}, nil
+	case "organization":
+		return &api.ServiceReplicaWebTerminalInput{Enabled: ptr(true), Access: ptr(api.TerminalAccessOrganization)}, nil
+	case "creator-and-owners":
+		return &api.ServiceReplicaWebTerminalInput{Enabled: ptr(true), Access: ptr(api.TerminalAccessCreatorAndOwners)}, nil
+	}
+	return nil, usagef(help, "--replica-web-terminal must be off, organization or creator-and-owners, got %q", v)
+}
+
+// replicaTerminalLabel is the replicas' web terminal as services get says it.
+func replicaTerminalLabel(wt api.ServiceReplicaWebTerminal) string {
+	if !wt.Enabled {
+		return "off"
+	}
+	if wt.Access == api.TerminalAccessCreatorAndOwners {
+		return "on, creator and owners"
+	}
+	return "on, organization"
+}
+
 func svcDetail(w io.Writer, e api.Service) {
 	fmt.Fprintf(w, "Name:       %s\nID:         %s\nService URL: %s\nMode:       %s\nAccess:     %s\nScaling:    %s\nStatus:     %s\nState:      %s\nProtocol:   %s\n",
 		san(e.Name), e.Id, san(e.Url), modeLabel(e.Mode), accessLabel(e.Access), scalingLabel(e), statusText(e), e.State, e.Protocol)
@@ -263,6 +289,7 @@ func svcDetail(w io.Writer, e api.Service) {
 		s := svcScaling(e)
 		fmt.Fprintf(w, "Autoscale:  %d to %d replicas, target %d concurrent requests each, scale to zero %s\n",
 			s.MinReplicas, s.MaxReplicas, s.TargetConcurrency, map[bool]string{true: "on", false: "off"}[s.ScaleToZero])
+		fmt.Fprintf(w, "Replica terminal: %s\n", replicaTerminalLabel(e.ReplicaWebTerminal))
 	} else if t.RentalId != nil {
 		fmt.Fprintf(w, "Rental:     %s port %d\n", t.RentalId, ptrOr(t.Port, 0))
 	}
@@ -356,7 +383,7 @@ func (a *app) svcGetCmd() *cobra.Command {
 func (a *app) svcUpdateCmd() *cobra.Command {
 	var sf scaleFlags
 	var hf hwFlags
-	var capStr, catalog, image, access string
+	var capStr, catalog, image, access, replicaTerminal string
 	var sources []string
 	var revision int64
 	var cf configFlags
@@ -377,7 +404,12 @@ Container configuration (autoscaled services): --env and --secret-env add or cha
 them; the others stay. A secret you do not name keeps its stored value. --setting changes the named model settings,
 --command and --arg replace the entrypoint and arguments of your own image; --clear-settings, --clear-command and
 --clear-args remove them. Any of these changes the replica template, so replicas are replaced one at a time with one
-surge replica and a running replica restarts. Anything in the container can be read by the provider's machine.`,
+surge replica and a running replica restarts. Anything in the container can be read by the provider's machine.
+
+--replica-web-terminal off|organization|creator-and-owners (autoscaled services) never replaces a replica: who may
+open the terminal (organization or creator-and-owners) changes on the running replicas at once, while turning it on
+or off applies to replicas started from now on (a rental's web terminal is fixed when it is created). Only the
+service's creator or an owner may change who may open it.`,
 		Example: "  legion services update chat --max 4\n  legion services update chat --access keys\n  legion services update chat --gpu H100 --gpu A100 --max-price 3 --monthly-cap 600",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
@@ -393,8 +425,15 @@ surge replica and a running replica restarts. Anything in the container can be r
 			if access != "" && access != "public" && access != "keys" {
 				return usagef("legion services update --help", "--access must be public or keys, got %q", access)
 			}
-			if scIn == nil && !hwChanged && !capChanged && !accessChanged && catalog == "" && image == "" && !cfgChanged {
-				return usagef("legion services update --help", "nothing to change: pass at least one of --env, --secret-env, --unset-env, --setting, --command, --arg, --access, --source, --min, --max, --scale-to-zero, --target-concurrency, --gpu, --max-price, --spot, --monthly-cap, --catalog, --image")
+			var wt *api.ServiceReplicaWebTerminalInput
+			if fl.Changed("replica-web-terminal") {
+				var err error
+				if wt, err = replicaWebTerminalInput("legion services update --help", replicaTerminal); err != nil {
+					return err
+				}
+			}
+			if scIn == nil && !hwChanged && !capChanged && !accessChanged && catalog == "" && image == "" && !cfgChanged && wt == nil {
+				return usagef("legion services update --help", "nothing to change: pass at least one of --env, --secret-env, --unset-env, --setting, --command, --arg, --access, --source, --min, --max, --scale-to-zero, --target-concurrency, --gpu, --max-price, --spot, --monthly-cap, --catalog, --image, --replica-web-terminal")
 			}
 			cfg, err := a.resolveConfig(cmd, &cf, "services update")
 			if err != nil {
@@ -411,6 +450,12 @@ surge replica and a running replica restarts. Anything in the container can be r
 					req.Revision = &revision
 				}
 				spend := false
+				if wt != nil {
+					if !svcAutoscaled(*e) {
+						return usagef("legion services get "+e.Name, "%s exposes a rental's port; --replica-web-terminal is for the replicas of an autoscaled service (the rental keeps its own web terminal)", e.Name)
+					}
+					req.ReplicaWebTerminal = wt
+				}
 				if cfgChanged && !svcAutoscaled(*e) {
 					return usagef("legion services get "+e.Name, "%s exposes a rental's port; container configuration belongs to autoscaled services (for a rental: legion rental env)", e.Name)
 				}
@@ -541,6 +586,7 @@ surge replica and a running replica restarts. Anything in the container can be r
 	fl.StringVar(&access, "access", "", "public (anyone) or keys (callers need a service key)")
 	fl.StringArrayVar(&sources, "source", nil, "allowed source CIDR, for example 203.0.113.0/24 (repeatable)")
 	fl.StringVar(&capStr, "monthly-cap", "", "monthly spend cap in dollars (UTC calendar month)")
+	fl.StringVar(&replicaTerminal, "replica-web-terminal", "", "web terminal on the replicas: off, organization or creator-and-owners (applies in place)")
 	fl.StringVar(&catalog, "catalog", "", "switch to this catalog model id")
 	fl.StringVar(&image, "image", "", "switch to this container image")
 	fl.Int64Var(&revision, "revision", 0, "refuse the change unless the service is at this revision")

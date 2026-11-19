@@ -242,7 +242,7 @@ func (a *app) askDefault(q, def string) (answer string, given bool, err error) {
 func (a *app) svcCreateCmd() *cobra.Command {
 	var sf scaleFlags
 	var hf hwFlags
-	var catalog, image, kind, servedModel, capStr, keyName, keyExpires, healthPath, rental, access string
+	var catalog, image, kind, servedModel, capStr, keyName, keyExpires, healthPath, rental, access, replicaTerminal string
 	var sources []string
 	var port int
 	var ack bool
@@ -264,7 +264,8 @@ replica-hour), --spot, --placement. For your own image state the need: --min-gpu
 1,2,4,8. A monthly spend cap (--monthly-cap) is required. Scaling
 defaults (min, max, concurrency) come from the platform. You see the cost floor, ceiling and cap and confirm (or
 pass --yes). Placement is eligible provider hosts; --ack-host-visibility acknowledges that hosts can see the
-workload (needed once per organization).
+workload (needed once per organization). Replicas have no web terminal unless you pass --replica-web-terminal
+organization (any member who manages rentals can open it) or creator-and-owners (you and the organization's owners).
 
 On a terminal anything missing is asked for. With keys access the first key is printed ONCE: copy it now.`,
 		Example: `  legion services create --rental quiet-river-7k2f --port 8080 --access keys
@@ -281,6 +282,16 @@ On a terminal anything missing is asked for. With keys access the first key is p
 			if access != "" && access != "public" && access != "keys" {
 				return usagef("legion services create --help", "--access must be public or keys, got %q", access)
 			}
+			var wt *api.ServiceReplicaWebTerminalInput
+			if fl.Changed("replica-web-terminal") {
+				var err error
+				if wt, err = replicaWebTerminalInput("legion services create --help", replicaTerminal); err != nil {
+					return err
+				}
+				if rental != "" {
+					return usagef("legion services create --help", "--replica-web-terminal is for the replicas of a model or image; a rental's port keeps the rental's own web terminal")
+				}
+			}
 			if catalog != "" && image != "" {
 				return usagef("legion services create --help", "use --catalog or --image, not both")
 			}
@@ -294,6 +305,9 @@ On a terminal anything missing is asked for. With keys access the first key is p
 					return err
 				}
 				portMode = i == 0
+			}
+			if portMode && wt != nil {
+				return usagef("legion services create --help", "--replica-web-terminal is for the replicas of a model or image; a rental's port keeps the rental's own web terminal")
 			}
 			if portMode && cf.any() {
 				return usagef("legion services create --help", "--env, --secret-env, --setting, --command and --arg configure the replicas of a model or image; they do not apply to an exposed rental port (set the rental's own with 'legion rental create' or 'legion rental env')")
@@ -499,7 +513,7 @@ On a terminal anything missing is asked for. With keys access the first key is p
 				tgt.HealthPath = &healthPath
 			}
 			tgt.Env, tgt.ModelSettings, tgt.Command, tgt.Args = cfg.envInputs(), cfg.modelSettings(), cfg.commandOverride(), cfg.argsOverride()
-			req := api.CreateServiceRequest{Name: &name, Target: tgt, MonthlySpendCap: capM}
+			req := api.CreateServiceRequest{Name: &name, Target: tgt, MonthlySpendCap: capM, ReplicaWebTerminal: wt}
 			if kind != "" {
 				req.Protocol = ptr(api.ServiceProtocol(kind))
 			}
@@ -523,6 +537,7 @@ On a terminal anything missing is asked for. With keys access the first key is p
 	fl := cmd.Flags()
 	fl.StringVar(&rental, "rental", "", "expose a port of this rental (name, id or prefix) instead of serving a model")
 	fl.StringVar(&access, "access", "", "public (anyone; default for a rental port) or keys (callers need a service key; default for a model)")
+	fl.StringVar(&replicaTerminal, "replica-web-terminal", "", "web terminal on the replicas: off (default), organization or creator-and-owners")
 	fl.StringArrayVar(&sources, "source", nil, "allowed source CIDR, for example 203.0.113.0/24 (repeatable; either access mode)")
 	fl.StringVar(&catalog, "catalog", "", "catalog model id to serve (see: legion catalog list)")
 	fl.StringVar(&catalog, "model", "", "alias of --catalog")
