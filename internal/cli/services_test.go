@@ -634,3 +634,64 @@ var _ = http.StatusOK
 func dateOf(y int, m time.Month, d int) openapi_types.Date {
 	return openapi_types.Date{Time: time.Date(y, m, d, 0, 0, 0, 0, time.UTC)}
 }
+
+// LGN-651: --replica-web-terminal off|organization|creator-and-owners on
+// create and update of an autoscaled service, and services get shows it.
+func TestServicesReplicaWebTerminal(t *testing.T) {
+	h := newHarness(t)
+	h.svcFixtures()
+	h.svcCreated()
+	h.mustRun(svcCreateArgs("--replica-web-terminal", "creator-and-owners", "--yes")...)
+	c := body[api.CreateServiceRequest](t, h.last("POST", "/v1/services"))
+	if wt := c.ReplicaWebTerminal; wt == nil || wt.Enabled == nil || !*wt.Enabled || wt.Access == nil || *wt.Access != api.TerminalAccessCreatorAndOwners {
+		t.Fatalf("create replica_web_terminal = %+v", c.ReplicaWebTerminal)
+	}
+	h.mustRun(svcCreateArgs("--yes")...)
+	if c = body[api.CreateServiceRequest](t, h.last("POST", "/v1/services")); c.ReplicaWebTerminal != nil {
+		t.Fatalf("create without the flag sent %+v; the service default (off) applies", c.ReplicaWebTerminal)
+	}
+
+	chat := svcFixture(1, "chat", modeAuto)
+	chat.ReplicaWebTerminal = api.ServiceReplicaWebTerminal{Enabled: true, Access: api.TerminalAccessOrganization}
+	h.svcFixtures(chat)
+	h.reply("GET /v1/services/"+uidS(1), 200, chat)
+	h.reply("PATCH /v1/services/"+uidS(1), 200, chat)
+	for _, tc := range []struct {
+		flag    string
+		enabled bool
+		access  *api.TerminalAccess
+	}{
+		{"off", false, nil},
+		{"organization", true, ptr(api.TerminalAccessOrganization)},
+		{"creator-and-owners", true, ptr(api.TerminalAccessCreatorAndOwners)},
+	} {
+		h.mustRun("services", "update", "chat", "--replica-web-terminal", tc.flag)
+		u := body[api.UpdateServiceRequest](t, h.last("PATCH", "/v1/services/"+uidS(1)))
+		wt := u.ReplicaWebTerminal
+		if wt == nil || wt.Enabled == nil || *wt.Enabled != tc.enabled || (tc.access == nil) != (wt.Access == nil) || (tc.access != nil && *wt.Access != *tc.access) || u.Target != nil {
+			t.Fatalf("%s: update = %+v", tc.flag, u)
+		}
+	}
+	for _, args := range [][]string{
+		{"services", "update", "chat", "--replica-web-terminal", "everyone"},
+		append(svcCreateArgs("--yes"), "--replica-web-terminal", "on"),
+	} {
+		if _, e, code := h.run(args...); code != 2 {
+			t.Fatalf("%v: exit %d %s", args, code, e)
+		}
+	}
+	out, _ := h.mustRun("services", "get", "chat")
+	contains(t, "get", out, "Replica terminal: on, organization")
+	chat.ReplicaWebTerminal = api.ServiceReplicaWebTerminal{Access: api.TerminalAccessOrganization}
+	h.reply("GET /v1/services/"+uidS(1), 200, chat)
+	out, _ = h.mustRun("services", "get", "chat")
+	contains(t, "get off", out, "Replica terminal: off")
+
+	// A service on a rental has no replicas: the flag is refused before any call.
+	port := svcFixture(3, "single", modeOff)
+	h.svcFixtures(port)
+	before := h.count("PATCH", "/v1/services/"+uidS(3))
+	if _, e, code := h.run("services", "update", "single", "--replica-web-terminal", "organization"); code != 2 || h.count("PATCH", "/v1/services/"+uidS(3)) != before {
+		t.Fatalf("rental-mode service: exit %d %s", code, e)
+	}
+}

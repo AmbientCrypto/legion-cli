@@ -18,7 +18,8 @@ replica-hour), --spot, --placement. For your own image state the need: --min-gpu
 1,2,4,8. A monthly spend cap (--monthly-cap) is required. Scaling
 defaults (min, max, concurrency) come from the platform. You see the cost floor, ceiling and cap and confirm (or
 pass --yes). Placement is eligible provider hosts; --ack-host-visibility acknowledges that hosts can see the
-workload (needed once per organization).
+workload (needed once per organization). Replicas have no web terminal unless you pass --replica-web-terminal
+organization (any member who manages rentals can open it) or creator-and-owners (you and the organization's owners).
 
 On a terminal anything missing is asked for. With keys access the first key is printed ONCE: copy it now.
 
@@ -37,36 +38,37 @@ legion services create [name] [flags]
 ### Options
 
 ```
-      --access string            public (anyone; default for a rental port) or keys (callers need a service key; default for a model)
-      --ack-host-visibility      acknowledge that provider hosts can see the workload (once per organization)
-      --arg stringArray          replace the image's default arguments of your own --image: one item per flag (repeatable)
-      --catalog string           catalog model id to serve (see: legion catalog list)
-      --command stringArray      replace the image entrypoint of your own --image: one item per flag, for example --command python --command server.py (repeatable)
-      --env stringArray          environment variable NAME=value for the container (repeatable). Not for secrets: they would show in your shell history; use --secret-env
-      --gpu stringArray          only use this GPU model, for example H100 (repeatable, unordered: the cheapest fitting one is rented). Default: any
-      --gpu-counts string        own image: GPU counts a replica may use, comma separated from 1,2,4,8 (default 1,2,4,8)
-      --health-path string       path polled to see a replica is ready (default /v1/models)
-  -h, --help                     help for create
-      --image string             your own container image instead of a catalog model (when your organization allows custom images)
-      --key-expires string       first key expiry: 7d, 30d, 90d, 365d or never (default: the platform's, 90d)
-      --key-name string          name of the first service key (default "default")
-      --kind string              protocol: openai (default for a model) or http
-      --max int                  maximum replicas (default from the platform)
-      --max-price string         highest total price per replica-hour in dollars (all its GPUs), for example 2.50. Default: none
-      --min int                  minimum replicas (default from the platform)
-      --min-gpu-memory float     own image: minimum total GPU memory per replica in GB
-      --model string             alias of --catalog
-      --monthly-cap string       monthly spend cap in dollars (UTC calendar month), required for a model
-      --placement string         eligible_hosts (default) or own_hosts
-      --port int                 with --rental: the port to expose; with --image: the port the service listens on
-      --rental string            expose a port of this rental (name, id or prefix) instead of serving a model
-      --scale-to-zero            let the service scale down to no replicas when idle (cold requests then wait for a replica)
-      --secret-env stringArray   secret environment variable NAME (repeatable). The value is read from stdin (one line per secret) or a hidden prompt, stored encrypted and never shown again
-      --served-model string      with --image: the model name the service reports
-      --setting stringArray      model setting key=value for a catalog model, for example max_model_len=32768 (repeatable; see the catalog entry's settings)
-      --source stringArray       allowed source CIDR, for example 203.0.113.0/24 (repeatable; either access mode)
-      --spot                     use spot (interruptible) capacity: cheaper, but replicas can be preempted
-      --target-concurrency int   concurrent requests per replica before another is added
+      --access string                 public (anyone; default for a rental port) or keys (callers need a service key; default for a model)
+      --ack-host-visibility           acknowledge that provider hosts can see the workload (once per organization)
+      --arg stringArray               replace the image's default arguments of your own --image: one item per flag (repeatable)
+      --catalog string                catalog model id to serve (see: legion catalog list)
+      --command stringArray           replace the image entrypoint of your own --image: one item per flag, for example --command python --command server.py (repeatable)
+      --env stringArray               environment variable NAME=value for the container (repeatable). Not for secrets: they would show in your shell history; use --secret-env
+      --gpu stringArray               only use this GPU model, for example H100 (repeatable, unordered: the cheapest fitting one is rented). Default: any
+      --gpu-counts string             own image: GPU counts a replica may use, comma separated from 1,2,4,8 (default 1,2,4,8)
+      --health-path string            path polled to see a replica is ready (default /v1/models)
+  -h, --help                          help for create
+      --image string                  your own container image instead of a catalog model (when your organization allows custom images)
+      --key-expires string            first key expiry: 7d, 30d, 90d, 365d or never (default: the platform's, 90d)
+      --key-name string               name of the first service key (default "default")
+      --kind string                   protocol: openai (default for a model) or http
+      --max int                       maximum replicas (default from the platform)
+      --max-price string              highest total price per replica-hour in dollars (all its GPUs), for example 2.50. Default: none
+      --min int                       minimum replicas (default from the platform)
+      --min-gpu-memory float          own image: minimum total GPU memory per replica in GB
+      --model string                  alias of --catalog
+      --monthly-cap string            monthly spend cap in dollars (UTC calendar month), required for a model
+      --placement string              eligible_hosts (default) or own_hosts
+      --port int                      with --rental: the port to expose; with --image: the port the service listens on
+      --rental string                 expose a port of this rental (name, id or prefix) instead of serving a model
+      --replica-web-terminal string   web terminal on the replicas: off (default), organization or creator-and-owners
+      --scale-to-zero                 let the service scale down to no replicas when idle (cold requests then wait for a replica)
+      --secret-env stringArray        secret environment variable NAME (repeatable). The value is read from stdin (one line per secret) or a hidden prompt, stored encrypted and never shown again
+      --served-model string           with --image: the model name the service reports
+      --setting stringArray           model setting key=value for a catalog model, for example max_model_len=32768 (repeatable; see the catalog entry's settings)
+      --source stringArray            allowed source CIDR, for example 203.0.113.0/24 (repeatable; either access mode)
+      --spot                          use spot (interruptible) capacity: cheaper, but replicas can be preempted
+      --target-concurrency int        concurrent requests per replica before another is added
 ```
 
 ### Options inherited from parent commands
