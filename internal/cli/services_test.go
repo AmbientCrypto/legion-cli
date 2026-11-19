@@ -65,7 +65,7 @@ func svcCreateArgs(extra ...string) []string {
 
 func (h *harness) svcCreated() {
 	h.reply("POST /v1/services", 201, api.ServiceCreated{Service: svcFixture(7, "my-svc", modeAuto),
-		InitialKey: api.ServiceKeyCreated{Key: keyFixture(8, "default"), Secret: "lek_SECRETVALUE123"}})
+		InitialKey: &api.ServiceKeyCreated{Key: keyFixture(8, "default"), Secret: "lek_SECRETVALUE123"}})
 }
 
 func TestServicesListColumnsAndFilter(t *testing.T) {
@@ -506,7 +506,7 @@ func portService(access api.ServiceAccessMode) api.Service {
 func TestServicesCreateRentalPort(t *testing.T) {
 	h := newHarness(t)
 	h.portFixtures()
-	h.reply("POST /v1/services", 201, api.ServiceCreated{Service: portService(api.ServiceAccessKeys), InitialKey: api.ServiceKeyCreated{Key: keyFixture(8, "default"), Secret: "lek_PORTSECRET"}})
+	h.reply("POST /v1/services", 201, api.ServiceCreated{Service: portService(api.ServiceAccessKeys), InitialKey: &api.ServiceKeyCreated{Key: keyFixture(8, "default"), Secret: "lek_PORTSECRET"}})
 	out, errs := h.mustRun("services", "create", "--rental", "quiet-river-7k2f", "--port", "8080", "--access", "keys", "--source", "203.0.113.0/24", "--yes")
 	c := h.last("POST", "/v1/services")
 	req := body[api.CreateServiceRequest](t, c)
@@ -554,7 +554,7 @@ func TestServicesCreateRentalPortPublicNeedsConfirmation(t *testing.T) {
 func TestServicesCreateInteractivePort(t *testing.T) {
 	h := newHarness(t)
 	h.portFixtures()
-	h.reply("POST /v1/services", 201, api.ServiceCreated{Service: portService(api.ServiceAccessKeys), InitialKey: api.ServiceKeyCreated{Key: keyFixture(8, "default"), Secret: "lek_X"}})
+	h.reply("POST /v1/services", 201, api.ServiceCreated{Service: portService(api.ServiceAccessKeys), InitialKey: &api.ServiceKeyCreated{Key: keyFixture(8, "default"), Secret: "lek_X"}})
 	h.tty = true
 	// kind 1 (a port), rental 1, port, access (default keys), confirm
 	h.stdin = "1\n1\n8080\n\ny\n"

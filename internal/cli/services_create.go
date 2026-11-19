@@ -643,7 +643,11 @@ func (a *app) postService(ctx context.Context, c *api.ClientWithResponses, req a
 	}
 	e := ec.Service
 	a.info("Created service %s at %s", san(e.Name), san(e.Url))
-	secret := ec.InitialKey.Secret
+	// A public service makes no key: initial_key is absent (LGN-639).
+	secret := ""
+	if ec.InitialKey != nil {
+		secret = ec.InitialKey.Secret
+	}
 	if secret != "" {
 		a.info("Warning: this is the only time the key secret is shown. Copy it now.")
 		a.info("Call it: curl %s -H 'Authorization: Bearer <key>'", san(e.Url))
