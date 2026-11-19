@@ -31,7 +31,7 @@ Leave the name out on a terminal to pick from a list.`,
 	})
 	cmd.AddCommand(a.rentalListCmd(), a.rentalGetCmd(), a.rentalCreateCmd(), a.rentalStopCmd(), a.rentalStartCmd(),
 		a.rentalDeleteCmd(), a.rentalWaitCmd(), a.rentalSSHCmd(false), a.rentalSSHConfigCmd(), a.rentalChargesCmd(),
-		a.rentalServeCmd(), a.rentalEnvCmd(), a.backupCmd(), a.exportCmd())
+		a.rentalServeCmd(), a.rentalEnvCmd(), a.rentalLogsCmd(), a.backupCmd(), a.exportCmd())
 	return cmd
 }
 

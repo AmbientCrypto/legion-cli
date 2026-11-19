@@ -35,7 +35,7 @@ func (a *app) servicesCmd() *cobra.Command {
   legion services keys create chat --name ci --expires 30d`,
 	})
 	cmd.AddCommand(a.svcListCmd(), a.svcGetCmd(), a.svcCreateCmd(), a.svcUpdateCmd(), a.svcPauseCmd(), a.svcResumeCmd(), a.svcDeleteCmd(),
-		a.svcReplicasCmd(), a.svcUsageCmd(), a.svcEventsCmd(), a.svcAutoscaleCmd(), a.svcKeysCmd())
+		a.svcReplicasCmd(), a.svcUsageCmd(), a.svcEventsCmd(), a.svcLogsCmd(), a.svcAutoscaleCmd(), a.svcKeysCmd())
 	return cmd
 }
 

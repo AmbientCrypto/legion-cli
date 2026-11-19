@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,6 +113,8 @@ type Error struct {
 	RegistryHost string
 	// Rentals are the rentals still using a registry credential (registry_credential_in_use).
 	Rentals []api.RegistryCredentialRental
+	// RetryAfter is the answer's Retry-After header (429), 0 when absent.
+	RetryAfter time.Duration
 }
 
 func (e *Error) Error() string {
@@ -150,7 +153,7 @@ func Check(resp *http.Response, body []byte) error {
 	if resp == nil || (resp.StatusCode >= 200 && resp.StatusCode < 300) {
 		return nil
 	}
-	e := &Error{Status: resp.StatusCode}
+	e := &Error{Status: resp.StatusCode, RetryAfter: retryAfter(resp.Header.Get("Retry-After"))}
 	var p api.Problem
 	if json.Unmarshal(body, &p) == nil && (p.Code != "" || p.Title != "") {
 		e.Code, e.Title, e.CurrentPrice = p.Code, p.Title, p.CurrentPricePerGpuHour
@@ -175,4 +178,21 @@ func Check(resp *http.Response, body []byte) error {
 // NetworkError words a transport failure.
 func NetworkError(err error, baseURL string) error {
 	return fmt.Errorf("cannot reach the Legion API at %s: %w", baseURL, err)
+}
+
+// retryAfter reads a Retry-After value: seconds, or an HTTP date.
+func retryAfter(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		return time.Duration(n) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return 0
 }

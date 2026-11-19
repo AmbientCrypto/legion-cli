@@ -147,3 +147,20 @@ func TestRedirectAndAuthStayOnBaseHost(t *testing.T) {
 		t.Fatal("Authorization reached another host")
 	}
 }
+
+func TestCheckRetryAfter(t *testing.T) {
+	for _, tc := range []struct {
+		hdr  string
+		want time.Duration
+	}{{"7", 7 * time.Second}, {"", 0}, {"soon", 0}} {
+		resp := &http.Response{StatusCode: 429, Header: http.Header{}}
+		if tc.hdr != "" {
+			resp.Header.Set("Retry-After", tc.hdr)
+		}
+		err := Check(resp, []byte(`{"code":"rate_limited","title":"Too many requests","status":429}`))
+		var e *Error
+		if !errors.As(err, &e) || e.RetryAfter != tc.want {
+			t.Fatalf("Retry-After %q: got %+v, want %s", tc.hdr, err, tc.want)
+		}
+	}
+}

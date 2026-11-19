@@ -51,6 +51,7 @@ type harness struct {
 	reads    func(text string) // the person reading stderr as it is written
 	execs    [][]string
 	ctx      context.Context
+	after    func(time.Duration) <-chan time.Time // the follow loop's timer; nil is the real one
 }
 
 func newHarness(t *testing.T) *harness {
@@ -176,6 +177,7 @@ func (h *harness) run(args ...string) (string, string, int) {
 		ReleasesURL: h.releases,
 		Executable:  func() (string, error) { return h.exe, nil },
 		Now:         func() time.Time { return h.now },
+		After:       h.after,
 		Home:        h.home, Poll: time.Millisecond, Version: ptrOr(nonEmpty(h.version), "1.2.3"), Commit: "abc1234", Date: "2026-10-26",
 	}
 	code := Execute(e, args)

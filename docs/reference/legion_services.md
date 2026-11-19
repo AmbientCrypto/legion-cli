@@ -53,6 +53,7 @@ legion services [flags]
 * [legion services get](legion_services_get.md)	 - Show one service
 * [legion services keys](legion_services_keys.md)	 - Manage service keys
 * [legion services list](legion_services_list.md)	 - List services
+* [legion services logs](legion_services_logs.md)	 - Show a service's logs from every replica, or follow them live
 * [legion services pause](legion_services_pause.md)	 - Stop serving and release the replicas
 * [legion services replicas](legion_services_replicas.md)	 - List a service's replicas
 * [legion services resume](legion_services_resume.md)	 - Start serving again

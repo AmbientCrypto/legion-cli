@@ -36,6 +36,7 @@ legion rental delete quiet-river-7k2f               # destroys the workspace for
 - A `<rental>` is an id, a friendly name or any unique prefix. On a terminal, leave it out to pick from a list.
 - `legion rental ssh-config <rental>` prints an `~/.ssh/config` block so `ssh`, `scp` and `rsync` work.
 - `legion catalog list` shows the starter images and premade models.
+- `legion rental logs <rental>` prints a rental's logs, oldest first (the last hour by default): its stdout and stderr, a Legion model's server and start log, and Legion's own events (image pulled, started, ready, stopped, failed). `-f` follows new lines until Ctrl-C; filter with `--since 6h`, `--source stdout,stderr`, `--level warn` and `--grep text`; `--json` prints one JSON object per line. `legion services logs <service>` merges every replica (`--replica <rental>` for one). Logs are kept 14 days and the values of the rental's environment variables and secrets show as `[redacted]`.
 - A service is a public URL for something you run on Legion. Point it at a port on one of your rentals (`legion services create --rental <rental> --port 8080`), or let Legion run your model on rented GPUs and scale it with traffic, down to zero when idle (`legion services create chat --catalog <model> --monthly-cap 400`). Make it public or require a service key (`--access public|keys`). `legion services list --rental <rental>` shows the services on a rental.
 
 ## Commands
@@ -44,10 +45,10 @@ legion rental delete quiet-river-7k2f               # destroys the workspace for
 legion auth login|logout|status        legion whoami
 legion config get|set                  legion profile list|create|use|delete
 legion catalog list|get                legion offer list|get
-legion rental create|list|get|stop|start|delete|wait|ssh|ssh-config|charges|serve
+legion rental create|list|get|stop|start|delete|wait|ssh|ssh-config|charges|serve|logs
 legion rental backup estimate|create|list|get|delete|cancel|download-link
 legion rental export estimate|create|list|get|link|cancel
-legion services (svc) list|get|create|update|delete|pause|resume|usage|events|replicas
+legion services (svc) list|get|create|update|delete|pause|resume|usage|events|replicas|logs
 legion services keys list|create|rotate|revoke    legion services autoscale on|off
 legion ssh <rental>                    legion ssh-key list|add|remove
 legion billing balance|charges|activity|ledger
