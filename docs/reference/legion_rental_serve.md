@@ -1,6 +1,6 @@
 ## legion rental serve
 
-Show the endpoint and API key of a premade model rental
+Show the service URL and API key of a premade model rental
 
 ### Synopsis
 

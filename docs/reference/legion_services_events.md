@@ -1,26 +1,27 @@
-## legion rental ingress list
+## legion services events
 
-Deprecated: list a rental's exposed ports
+Show scaling and configuration history
 
 ### Synopsis
 
-Deprecated: same as 'legion endpoints list --rental <rental>'.
+Show what changed and why: scaling steps, config changes and key activity, newest first.
 
 ```
-legion rental ingress list <rental> [flags]
+legion services events <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion rental ingress list quiet-river-7k2f
-  legion rental ingress list quiet -o json
+  legion services events chat
+  legion services events chat --limit 20 -o json
 ```
 
 ### Options
 
 ```
-  -h, --help   help for list
+  -h, --help        help for events
+      --limit int   how many events at most (0 for all) (default 50)
 ```
 
 ### Options inherited from parent commands
@@ -38,5 +39,5 @@ legion rental ingress list <rental> [flags]
 
 ### SEE ALSO
 
-* [legion rental ingress](legion_rental_ingress.md)	 - Deprecated: use 'legion endpoints' to expose a port
+* [legion services](legion_services.md)	 - Give what you run a public URL, with optional service keys
 

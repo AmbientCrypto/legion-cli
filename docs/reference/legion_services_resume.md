@@ -1,26 +1,26 @@
-## legion endpoints keys list
+## legion services resume
 
-List an endpoint's keys
+Start serving again
 
 ### Synopsis
 
-List keys with prefix, status, expiry and last use. Secrets and hashes are never shown. A key marked legacy is a direct key of a rental created before endpoints; its direct URL is in -o wide.
+Resume a paused service. Replicas start again and bill per GPU-hour; the cost floor and ceiling are shown and you confirm (or pass --yes).
 
 ```
-legion endpoints keys list <endpoint> [flags]
+legion services resume <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints keys list chat
-  legion endpoints keys list chat -o wide
+  legion services resume chat
+  legion services resume chat --yes
 ```
 
 ### Options
 
 ```
-  -h, --help   help for list
+  -h, --help   help for resume
 ```
 
 ### Options inherited from parent commands
@@ -38,5 +38,5 @@ legion endpoints keys list <endpoint> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints keys](legion_endpoints_keys.md)	 - Manage an endpoint's access keys
+* [legion services](legion_services.md)	 - Give what you run a public URL, with optional service keys
 

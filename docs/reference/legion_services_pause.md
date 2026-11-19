@@ -1,26 +1,27 @@
-## legion endpoints get
+## legion services pause
 
-Show one endpoint
+Stop serving and release the replicas
 
 ### Synopsis
 
-Show an endpoint's URL, status, hardware, replicas and spend. <endpoint> is an id, a name or a unique prefix.
+Pause: no replicas run and no GPU cost accrues. The URL and keys are kept and callers get 503
+service_paused until you resume. Warm replicas are released after the warm expiry.
 
 ```
-legion endpoints get <endpoint> [flags]
+legion services pause <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints get chat
-  legion endpoints get chat -o json
+  legion services pause chat
+  legion services pause chat -o json
 ```
 
 ### Options
 
 ```
-  -h, --help   help for get
+  -h, --help   help for pause
 ```
 
 ### Options inherited from parent commands
@@ -38,5 +39,5 @@ legion endpoints get <endpoint> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints](legion_endpoints.md)	 - Serve models and ports behind one URL with access keys
+* [legion services](legion_services.md)	 - Give what you run a public URL, with optional service keys
 

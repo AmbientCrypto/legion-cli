@@ -1,39 +1,39 @@
-## legion endpoints update
+## legion services update
 
-Change an endpoint's access, scaling, hardware, price ceiling or cap
+Change a service's access, scaling, hardware, price ceiling or cap
 
 ### Synopsis
 
 Change only the settings you name; everything else stays and the URL never changes.
 --access public|keys switches who may call it (keys can exist while it is public, so there is no downtime);
 --source <cidr> (repeatable) limits callers to those networks in either mode.
-Scaling, hardware, --catalog and --image apply to autoscaled endpoints; changes that can raise spend show the new
+Scaling, hardware, --catalog and --image apply to autoscaled services; changes that can raise spend show the new
 cost floor and ceiling and ask for confirmation (or pass --yes). Config changes roll one replica at a time with one
-surge replica, which counts against the maximum and the monthly cap. --revision refuses the change when the endpoint
-was edited meanwhile. Turn autoscaling on or off with 'legion endpoints autoscale'.
+surge replica, which counts against the maximum and the monthly cap. --revision refuses the change when the service
+was edited meanwhile. Turn autoscaling on or off with 'legion services autoscale'.
 
-Container configuration (autoscaled endpoints): --env and --secret-env add or change variables and --unset-env removes
+Container configuration (autoscaled services): --env and --secret-env add or change variables and --unset-env removes
 them; the others stay. A secret you do not name keeps its stored value. --setting changes the named model settings,
 --command and --arg replace the entrypoint and arguments of your own image; --clear-settings, --clear-command and
 --clear-args remove them. Any of these changes the replica template, so replicas are replaced one at a time with one
 surge replica and a running replica restarts. Anything in the container can be read by the provider's machine.
 
 ```
-legion endpoints update <endpoint> [flags]
+legion services update <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints update chat --max 4
-  legion endpoints update chat --access keys
-  legion endpoints update chat --gpu H100 --gpu A100 --max-price 3 --monthly-cap 600
+  legion services update chat --max 4
+  legion services update chat --access keys
+  legion services update chat --gpu H100 --gpu A100 --max-price 3 --monthly-cap 600
 ```
 
 ### Options
 
 ```
-      --access string            public (anyone) or keys (callers need an access key)
+      --access string            public (anyone) or keys (callers need a service key)
       --arg stringArray          replace the image's default arguments of your own image: one item per flag (repeatable)
       --catalog string           switch to this catalog model id
       --clear-args               remove the arguments override
@@ -51,8 +51,8 @@ legion endpoints update <endpoint> [flags]
       --min-gpu-memory float     own image: minimum total GPU memory per replica in GB
       --monthly-cap string       monthly spend cap in dollars (UTC calendar month)
       --placement string         eligible_hosts (default) or own_hosts
-      --revision int             refuse the change unless the endpoint is at this revision
-      --scale-to-zero            let the endpoint scale down to no replicas when idle (cold requests then wait for a replica)
+      --revision int             refuse the change unless the service is at this revision
+      --scale-to-zero            let the service scale down to no replicas when idle (cold requests then wait for a replica)
       --secret-env stringArray   secret environment variable NAME (repeatable). The value is read from stdin (one line per secret) or a hidden prompt, stored encrypted and never shown again
       --setting stringArray      model setting key=value for a catalog model, for example max_model_len=32768 (repeatable; see the catalog entry's settings)
       --source stringArray       allowed source CIDR, for example 203.0.113.0/24 (repeatable)
@@ -76,5 +76,5 @@ legion endpoints update <endpoint> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints](legion_endpoints.md)	 - Serve models and ports behind one URL with access keys
+* [legion services](legion_services.md)	 - Give what you run a public URL, with optional service keys
 

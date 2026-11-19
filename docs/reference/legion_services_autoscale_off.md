@@ -1,26 +1,28 @@
-## legion endpoints resume
+## legion services autoscale off
 
-Start serving again
+Turn off autoscaling and keep one replica as a single rental
 
 ### Synopsis
 
-Resume a paused endpoint. Replicas start again and bill per GPU-hour; the cost floor and ceiling are shown and you confirm (or pass --yes).
+Turn an autoscaled service back into one rental. You pick one ready replica to keep (--keep-replica, a rental
+name or id; on a terminal you are asked); the other replicas drain and stop. The URL and keys stay the same.
 
 ```
-legion endpoints resume <endpoint> [flags]
+legion services autoscale off <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints resume chat
-  legion endpoints resume chat --yes
+  legion services autoscale off chat --keep-replica quiet-river-7k2f --yes
+  legion services autoscale off chat
 ```
 
 ### Options
 
 ```
-  -h, --help   help for resume
+  -h, --help                  help for off
+      --keep-replica string   rental name or id of the replica to keep
 ```
 
 ### Options inherited from parent commands
@@ -38,5 +40,5 @@ legion endpoints resume <endpoint> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints](legion_endpoints.md)	 - Serve models and ports behind one URL with access keys
+* [legion services autoscale](legion_services_autoscale.md)	 - Turn autoscaling on or off for a service
 

@@ -26,14 +26,14 @@ func (f *scaleFlags) register(cmd *cobra.Command) {
 	fl := cmd.Flags()
 	fl.IntVar(&f.min, "min", 0, "minimum replicas (default from the platform)")
 	fl.IntVar(&f.max, "max", 0, "maximum replicas (default from the platform)")
-	fl.BoolVar(&f.toZero, "scale-to-zero", false, "let the endpoint scale down to no replicas when idle (cold requests then wait for a replica)")
+	fl.BoolVar(&f.toZero, "scale-to-zero", false, "let the service scale down to no replicas when idle (cold requests then wait for a replica)")
 	fl.IntVar(&f.target, "target-concurrency", 0, "concurrent requests per replica before another is added")
 }
 
 // input is the scaling the person named; nil when they named none.
-func (f *scaleFlags) input(cmd *cobra.Command) *api.EndpointScalingInput {
+func (f *scaleFlags) input(cmd *cobra.Command) *api.ServiceScalingInput {
 	fl := cmd.Flags()
-	in := api.EndpointScalingInput{}
+	in := api.ServiceScalingInput{}
 	n := 0
 	if fl.Changed("min") {
 		in.MinReplicas, n = ptr(f.min), n+1
@@ -54,7 +54,7 @@ func (f *scaleFlags) input(cmd *cobra.Command) *api.EndpointScalingInput {
 }
 
 // overlay applies the named scaling over a base.
-func overlay(base api.EndpointScaling, in *api.EndpointScalingInput) api.EndpointScaling {
+func overlay(base api.ServiceScaling, in *api.ServiceScalingInput) api.ServiceScaling {
 	if in == nil {
 		return base
 	}
@@ -100,9 +100,9 @@ func (f *hwFlags) changed(cmd *cobra.Command) bool {
 }
 
 // apply overlays the named hardware over base.
-func (f *hwFlags) apply(cmd *cobra.Command, base api.EndpointHardware) (api.EndpointHardware, error) {
+func (f *hwFlags) apply(cmd *cobra.Command, base api.ServiceHardware) (api.ServiceHardware, error) {
 	fl := cmd.Flags()
-	base.Strategy = ptr(api.EndpointHardwareCheapestFit)
+	base.Strategy = ptr(api.ServiceHardwareCheapestFit)
 	if len(f.gpus) > 0 {
 		g, err := parseGPUs(f.gpus)
 		if err != nil {
@@ -132,19 +132,19 @@ func (f *hwFlags) apply(cmd *cobra.Command, base api.EndpointHardware) (api.Endp
 		base.MinGpuMemoryGb = &m
 	}
 	if fl.Changed("gpu-counts") {
-		var cs []api.EndpointHardwareGpuCounts
+		var cs []api.ServiceHardwareGpuCounts
 		for _, v := range strings.Split(f.counts, ",") {
 			n, err := strconv.Atoi(strings.TrimSpace(v))
 			if err != nil || (n != 1 && n != 2 && n != 4 && n != 8) {
 				return base, usagef("legion "+a0(cmd)+" --help", "--gpu-counts takes counts from 1,2,4,8, for example 1,2,4; got %q", v)
 			}
-			cs = append(cs, api.EndpointHardwareGpuCounts(n))
+			cs = append(cs, api.ServiceHardwareGpuCounts(n))
 		}
 		base.GpuCounts = &cs
 	}
 	if f.placement != "" {
-		p := api.EndpointPlacement(f.placement)
-		if p != api.EndpointPlacementEligibleHosts && p != api.EndpointPlacementOwnHosts {
+		p := api.ServicePlacement(f.placement)
+		if p != api.ServicePlacementEligibleHosts && p != api.ServicePlacementOwnHosts {
 			return base, usagef("legion "+a0(cmd)+" --help", "--placement must be eligible_hosts or own_hosts, got %q", f.placement)
 		}
 		base.Placement = &p
@@ -165,7 +165,7 @@ func parseGPUs(vals []string) ([]string, error) {
 				continue
 			}
 			if strings.Contains(s, ":") {
-				return nil, usagef("legion endpoints create --help", "--gpu %q: give a GPU model only, for example H100; the platform picks the GPU count (own images: --gpu-counts)", s)
+				return nil, usagef("legion services create --help", "--gpu %q: give a GPU model only, for example H100; the platform picks the GPU count (own images: --gpu-counts)", s)
 			}
 			out = append(out, s)
 		}
@@ -176,27 +176,27 @@ func parseGPUs(vals []string) ([]string, error) {
 func dollars(flagName, s string) (api.Money, error) {
 	n, err := output.ParseDollars(s)
 	if err != nil {
-		return api.Money{}, usagef("legion "+"endpoints --help", "%s: %v", flagName, err)
+		return api.Money{}, usagef("legion "+"services --help", "%s: %v", flagName, err)
 	}
 	return api.Money{AmountMinor: n, Currency: "USD"}, nil
 }
 
 // ---- estimate and summary ----
 
-func (a *app) epEstimate(ctx context.Context, c *api.ClientWithResponses, catalog *string, hw api.EndpointHardware, sc api.EndpointScaling, cap *api.Money) (*api.EndpointEstimate, error) {
-	req := api.EndpointEstimateRequest{MonthlySpendCap: cap, Target: &api.EndpointTargetInput{Kind: api.EndpointTargetAutoscale, CatalogId: catalog, Hardware: &hw, Scaling: &api.EndpointScalingInput{
+func (a *app) svcEstimate(ctx context.Context, c *api.ClientWithResponses, catalog *string, hw api.ServiceHardware, sc api.ServiceScaling, cap *api.Money) (*api.ServiceEstimate, error) {
+	req := api.ServiceEstimateRequest{MonthlySpendCap: cap, Target: &api.ServiceTargetInput{Mode: api.ServiceModeAutoscaled, CatalogId: catalog, Hardware: &hw, Scaling: &api.ServiceScalingInput{
 		MinReplicas: &sc.MinReplicas, MaxReplicas: &sc.MaxReplicas, ScaleToZero: &sc.ScaleToZero, TargetConcurrency: &sc.TargetConcurrency}}}
-	r, err := c.EstimateEndpointWithResponse(ctx, req)
+	r, err := c.EstimateServiceWithResponse(ctx, req)
 	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
 	return need(r.JSON200)
 }
 
-// summary prints what the endpoint will cost, to stderr, before a confirmation.
-func (a *app) summary(name string, hw api.EndpointHardware, sc api.EndpointScaling, est *api.EndpointEstimate, cap *api.Money) {
+// summary prints what the service will cost, to stderr, before a confirmation.
+func (a *app) summary(name string, hw api.ServiceHardware, sc api.ServiceScaling, est *api.ServiceEstimate, cap *api.Money) {
 	w := a.env.Stderr
-	fmt.Fprintf(w, "Endpoint:      %s\n", san(name))
+	fmt.Fprintf(w, "Service:      %s\n", san(name))
 	fmt.Fprintf(w, "Hardware:      %s\n", hwText(hw))
 	z := "off"
 	if sc.ScaleToZero {
@@ -239,7 +239,7 @@ func (a *app) askDefault(q, def string) (answer string, given bool, err error) {
 	return ans, true, nil
 }
 
-func (a *app) epCreateCmd() *cobra.Command {
+func (a *app) svcCreateCmd() *cobra.Command {
 	var sf scaleFlags
 	var hf hwFlags
 	var catalog, image, kind, servedModel, capStr, keyName, keyExpires, healthPath, rental, access string
@@ -249,12 +249,12 @@ func (a *app) epCreateCmd() *cobra.Command {
 	var cf configFlags
 	cmd := &cobra.Command{
 		Use:   "create [name]",
-		Short: "Create an endpoint: expose a rental's port, or serve a model on autoscaled GPUs",
-		Long: `An endpoint is a URL (https://<name>.ambi.run), an access policy and a target.
+		Short: "Create a service: expose a rental's port, or serve a model on autoscaled GPUs",
+		Long: `A service is a URL (https://<name>.ambi.run), an access policy and a target.
 
 Expose a port of one of your rentals (no extra GPU cost):
-  legion endpoints create --rental <rental> --port 8080 --access keys
---access is public (anyone, the default) or keys (callers need an access key); --source <cidr> (repeatable) limits
+  legion services create --rental <rental> --port 8080 --access keys
+--access is public (anyone, the default) or keys (callers need a service key); --source <cidr> (repeatable) limits
 callers to those networks in either mode. The name defaults to the rental's name.
 
 Serve a model on autoscaled GPUs: --catalog (or --image with --port). Legion rents the cheapest hardware that fits
@@ -267,9 +267,9 @@ pass --yes). Placement is eligible provider hosts; --ack-host-visibility acknowl
 workload (needed once per organization).
 
 On a terminal anything missing is asked for. With keys access the first key is printed ONCE: copy it now.`,
-		Example: `  legion endpoints create --rental quiet-river-7k2f --port 8080 --access keys
-  legion endpoints create chat --catalog llama-3-8b --max-price 2.50 --monthly-cap 400
-  legion endpoints create chat --image ghcr.io/me/serve:1 --port 8000 --min-gpu-memory 24 --gpu-counts 1,2 --max-price 1 --monthly-cap 100 --spot --scale-to-zero --min 0 --yes`,
+		Example: `  legion services create --rental quiet-river-7k2f --port 8080 --access keys
+  legion services create chat --catalog llama-3-8b --max-price 2.50 --monthly-cap 400
+  legion services create chat --image ghcr.io/me/serve:1 --port 8000 --min-gpu-memory 24 --gpu-counts 1,2 --max-price 1 --monthly-cap 100 --spot --scale-to-zero --min 0 --yes`,
 		Args: args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
 			fl := cmd.Flags()
@@ -279,13 +279,13 @@ On a terminal anything missing is asked for. With keys access the first key is p
 			}
 			interactive := a.interactive()
 			if access != "" && access != "public" && access != "keys" {
-				return usagef("legion endpoints create --help", "--access must be public or keys, got %q", access)
+				return usagef("legion services create --help", "--access must be public or keys, got %q", access)
 			}
 			if catalog != "" && image != "" {
-				return usagef("legion endpoints create --help", "use --catalog or --image, not both")
+				return usagef("legion services create --help", "use --catalog or --image, not both")
 			}
 			if rental != "" && (catalog != "" || image != "") {
-				return usagef("legion endpoints create --help", "--rental exposes a port of a rental; it cannot be combined with --catalog or --image")
+				return usagef("legion services create --help", "--rental exposes a port of a rental; it cannot be combined with --catalog or --image")
 			}
 			portMode := rental != ""
 			if !portMode && catalog == "" && image == "" && interactive {
@@ -296,10 +296,10 @@ On a terminal anything missing is asked for. With keys access the first key is p
 				portMode = i == 0
 			}
 			if portMode && cf.any() {
-				return usagef("legion endpoints create --help", "--env, --secret-env, --setting, --command and --arg configure the replicas of a model or image; they do not apply to an exposed rental port (set the rental's own with 'legion rental create' or 'legion rental env')")
+				return usagef("legion services create --help", "--env, --secret-env, --setting, --command and --arg configure the replicas of a model or image; they do not apply to an exposed rental port (set the rental's own with 'legion rental create' or 'legion rental env')")
 			}
 			if portMode {
-				return a.createPortEndpoint(cmd, name, rental, port, access, sources, kind, keyName, keyExpires)
+				return a.createPortService(cmd, name, rental, port, access, sources, kind, keyName, keyExpires)
 			}
 			if !interactive {
 				var missing []string
@@ -313,13 +313,13 @@ On a terminal anything missing is asked for. With keys access the first key is p
 					missing = append(missing, "--monthly-cap")
 				}
 				if len(missing) > 0 {
-					return usagef("legion endpoints create --help", "missing required: %s (run on a terminal to be asked)", strings.Join(missing, ", "))
+					return usagef("legion services create --help", "missing required: %s (run on a terminal to be asked)", strings.Join(missing, ", "))
 				}
 			}
 			if image != "" && port == 0 && !interactive {
-				return usagef("legion endpoints create --help", "--image needs --port, the port the service listens on")
+				return usagef("legion services create --help", "--image needs --port, the port the service listens on")
 			}
-			cfg, err := a.resolveConfig(cmd, &cf, "endpoints create")
+			cfg, err := a.resolveConfig(cmd, &cf, "services create")
 			if err != nil {
 				return err
 			}
@@ -329,7 +329,7 @@ On a terminal anything missing is asked for. With keys access the first key is p
 			}
 			ctx := a.ctx(cmd)
 			if name == "" {
-				if name, _, err = a.askDefault("Endpoint name (lowercase letters, digits, dashes)", ""); err != nil {
+				if name, _, err = a.askDefault("Service name (lowercase letters, digits, dashes)", ""); err != nil {
 					return err
 				}
 			}
@@ -346,7 +346,7 @@ On a terminal anything missing is asked for. With keys access the first key is p
 						return err
 					}
 					if port, err = strconv.Atoi(p); err != nil {
-						return usagef("legion endpoints create --help", "%q is not a port", p)
+						return usagef("legion services create --help", "%q is not a port", p)
 					}
 					if kind, _, err = a.askDefault("Protocol (openai or http)", orDefault(kind, "openai")); err != nil {
 						return err
@@ -372,13 +372,13 @@ On a terminal anything missing is asked for. With keys access the first key is p
 				}
 			}
 			if name == "" || (catalog == "" && image == "") {
-				return usagef("legion endpoints create --help", "an endpoint needs a name and a --catalog model or an --image")
+				return usagef("legion services create --help", "a service needs a name and a --catalog model or an --image")
 			}
 			var cat *string
 			if catalog != "" {
 				cat = &catalog
 			}
-			d, err := a.endpointDefaults(ctx, c, cat)
+			d, err := a.serviceDefaults(ctx, c, cat)
 			if err != nil {
 				return err
 			}
@@ -419,9 +419,9 @@ On a terminal anything missing is asked for. With keys access the first key is p
 				if given {
 					n, err := strconv.Atoi(v)
 					if err != nil {
-						return usagef("legion endpoints create --help", "%q is not a number", v)
+						return usagef("legion services create --help", "%q is not a number", v)
 					}
-					scIn = withScaling(scIn, func(s *api.EndpointScalingInput) { s.MinReplicas = &n })
+					scIn = withScaling(scIn, func(s *api.ServiceScalingInput) { s.MinReplicas = &n })
 				}
 			}
 			if interactive && !fl.Changed("max") {
@@ -432,12 +432,12 @@ On a terminal anything missing is asked for. With keys access the first key is p
 				if given {
 					n, err := strconv.Atoi(v)
 					if err != nil {
-						return usagef("legion endpoints create --help", "%q is not a number", v)
+						return usagef("legion services create --help", "%q is not a number", v)
 					}
-					scIn = withScaling(scIn, func(s *api.EndpointScalingInput) { s.MaxReplicas = &n })
+					scIn = withScaling(scIn, func(s *api.ServiceScalingInput) { s.MaxReplicas = &n })
 				}
 			}
-			hw, err := hf.apply(cmd, api.EndpointHardware{})
+			hw, err := hf.apply(cmd, api.ServiceHardware{})
 			if err != nil {
 				return err
 			}
@@ -450,7 +450,7 @@ On a terminal anything missing is asked for. With keys access the first key is p
 				}
 				capM = &m
 			}
-			est, err := a.epEstimate(ctx, c, cat, hw, sc, capM)
+			est, err := a.svcEstimate(ctx, c, cat, hw, sc, capM)
 			if err != nil {
 				return err
 			}
@@ -466,7 +466,7 @@ On a terminal anything missing is asked for. With keys access the first key is p
 				}
 				capM = &m
 			}
-			if err := checkEndpointConfig(cfg, catalog != ""); err != nil {
+			if err := checkServiceConfig(cfg, catalog != ""); err != nil {
 				return err
 			}
 			a.summary(name, hw, sc, est, capM)
@@ -483,14 +483,14 @@ On a terminal anything missing is asked for. With keys access the first key is p
 			if never && access != "public" {
 				a.info("Warning: the first key never expires. Prefer an expiry unless you rotate it yourself.")
 			}
-			q := fmt.Sprintf("Create endpoint %s? It spends up to the cap of %s a month.", name, moneyStr(*capM))
+			q := fmt.Sprintf("Create service %s? It spends up to the cap of %s a month.", name, moneyStr(*capM))
 			if err := a.confirm(q, "refusing to create "+name+" without confirmation: it spends money, up to the monthly cap shown above"); err != nil {
 				return err
 			}
-			tgt := api.EndpointTargetInput{Kind: api.EndpointTargetAutoscale, CatalogId: cat, Hardware: &hw, Scaling: scIn}
+			tgt := api.ServiceTargetInput{Mode: api.ServiceModeAutoscaled, CatalogId: cat, Hardware: &hw, Scaling: scIn}
 			if image != "" {
 				tgt.Image = &image
-				tgt.Serve = &api.EndpointServeInput{Port: port}
+				tgt.Serve = &api.ServiceServeInput{Port: port}
 				if servedModel != "" {
 					tgt.Serve.Model = &servedModel
 				}
@@ -499,15 +499,15 @@ On a terminal anything missing is asked for. With keys access the first key is p
 				tgt.HealthPath = &healthPath
 			}
 			tgt.Env, tgt.ModelSettings, tgt.Command, tgt.Args = cfg.envInputs(), cfg.modelSettings(), cfg.commandOverride(), cfg.argsOverride()
-			req := api.CreateEndpointRequest{Name: &name, Target: tgt, MonthlySpendCap: capM}
+			req := api.CreateServiceRequest{Name: &name, Target: tgt, MonthlySpendCap: capM}
 			if kind != "" {
-				req.Protocol = ptr(api.EndpointProtocol(kind))
+				req.Protocol = ptr(api.ServiceProtocol(kind))
 			}
 			if access != "" || len(sources) > 0 {
 				req.Access = accessInput(access, sources)
 			}
 			if access != "public" {
-				req.InitialKey = &api.CreateEndpointKeyRequest{Name: keyName, ExpiresInDays: ex}
+				req.InitialKey = &api.CreateServiceKeyRequest{Name: keyName, ExpiresInDays: ex}
 				if never {
 					req.InitialKey.NoExpiry = ptr(true)
 				}
@@ -515,14 +515,14 @@ On a terminal anything missing is asked for. With keys access the first key is p
 			if ack || (interactive && !a.yes) {
 				req.AcknowledgeHostVisibility = ptr(true)
 			}
-			return a.postEndpoint(ctx, c, req)
+			return a.postService(ctx, c, req)
 		},
 	}
 	hf.register(cmd)
 	sf.register(cmd)
 	fl := cmd.Flags()
 	fl.StringVar(&rental, "rental", "", "expose a port of this rental (name, id or prefix) instead of serving a model")
-	fl.StringVar(&access, "access", "", "public (anyone; default for a rental port) or keys (callers need an access key; default for a model)")
+	fl.StringVar(&access, "access", "", "public (anyone; default for a rental port) or keys (callers need a service key; default for a model)")
 	fl.StringArrayVar(&sources, "source", nil, "allowed source CIDR, for example 203.0.113.0/24 (repeatable; either access mode)")
 	fl.StringVar(&catalog, "catalog", "", "catalog model id to serve (see: legion catalog list)")
 	fl.StringVar(&catalog, "model", "", "alias of --catalog")
@@ -532,16 +532,16 @@ On a terminal anything missing is asked for. With keys access the first key is p
 	fl.StringVar(&servedModel, "served-model", "", "with --image: the model name the service reports")
 	fl.StringVar(&healthPath, "health-path", "", "path polled to see a replica is ready (default /v1/models)")
 	fl.StringVar(&capStr, "monthly-cap", "", "monthly spend cap in dollars (UTC calendar month), required for a model")
-	fl.StringVar(&keyName, "key-name", "default", "name of the first access key")
+	fl.StringVar(&keyName, "key-name", "default", "name of the first service key")
 	fl.StringVar(&keyExpires, "key-expires", "", "first key expiry: 7d, 30d, 90d, 365d or never (default: the platform's, 90d)")
 	cf.register(cmd, "your own --image")
 	fl.BoolVar(&ack, "ack-host-visibility", false, "acknowledge that provider hosts can see the workload (once per organization)")
 	return cmd
 }
 
-// checkEndpointConfig refuses what the platform would refuse: settings are for
+// checkServiceConfig refuses what the platform would refuse: settings are for
 // catalog models, command and args for your own image.
-func checkEndpointConfig(cfg *containerConfig, catalog bool) error {
+func checkServiceConfig(cfg *containerConfig, catalog bool) error {
 	if cfg == nil {
 		return nil
 	}
@@ -554,17 +554,16 @@ func checkEndpointConfig(cfg *containerConfig, catalog bool) error {
 	return nil
 }
 
-func accessInput(mode string, sources []string) *api.EndpointAccess {
-	acc := api.EndpointAccess{Mode: api.EndpointAccessMode(orDefault(mode, "public"))}
+func accessInput(mode string, sources []string) *api.ServiceAccess {
+	acc := api.ServiceAccess{Mode: api.ServiceAccessMode(orDefault(mode, "public"))}
 	if len(sources) > 0 {
 		acc.Sources = &sources
 	}
 	return &acc
 }
 
-// createPortEndpoint exposes a port of a rental as an endpoint. The old
-// 'legion rental ingress add' calls it too.
-func (a *app) createPortEndpoint(cmd *cobra.Command, name, rentalArg string, port int, access string, sources []string, kind, keyName, keyExpires string) error {
+// createPortService exposes a port of a rental as a service.
+func (a *app) createPortService(cmd *cobra.Command, name, rentalArg string, port int, access string, sources []string, kind, keyName, keyExpires string) error {
 	c, err := a.api()
 	if err != nil {
 		return err
@@ -580,22 +579,22 @@ func (a *app) createPortEndpoint(cmd *cobra.Command, name, rentalArg string, por
 	}
 	if port == 0 {
 		if !a.interactive() {
-			return usagef("legion endpoints create --help", "missing required flag --port")
+			return usagef("legion services create --help", "missing required flag --port")
 		}
 		p, _, err := a.askDefault("Port to expose", "")
 		if err != nil {
 			return err
 		}
 		if port, err = strconv.Atoi(p); err != nil {
-			return usagef("legion endpoints create --help", "%q is not a port", p)
+			return usagef("legion services create --help", "%q is not a port", p)
 		}
 	}
 	if access == "" && a.interactive() && !a.yes {
-		if access, _, err = a.askDefault("Access: public (anyone) or keys (callers need an access key)", "keys"); err != nil {
+		if access, _, err = a.askDefault("Access: public (anyone) or keys (callers need a service key)", "keys"); err != nil {
 			return err
 		}
 		if access != "public" && access != "keys" {
-			return usagef("legion endpoints create --help", "access must be public or keys, got %q", access)
+			return usagef("legion services create --help", "access must be public or keys, got %q", access)
 		}
 	}
 	ex, never, err := parseExpiry(keyExpires)
@@ -607,34 +606,34 @@ func (a *app) createPortEndpoint(cmd *cobra.Command, name, rentalArg string, por
 		who = "only " + strings.Join(sources, ", ")
 	}
 	if access == "keys" {
-		who += " who have an access key"
+		who += " who have a service key"
 	}
 	msg := fmt.Sprintf("port %d of %s will be reachable on the internet by %s", port, r.Name, who)
 	if err := a.confirm("Expose it? "+msg+".", "refusing to expose a port without confirmation: "+msg); err != nil {
 		return err
 	}
-	req := api.CreateEndpointRequest{Target: api.EndpointTargetInput{Kind: api.EndpointTargetRental, RentalId: &r.Id, Port: &port}}
+	req := api.CreateServiceRequest{Target: api.ServiceTargetInput{Mode: api.ServiceModeRental, RentalId: &r.Id, Port: &port}}
 	if name != "" {
 		req.Name = &name
 	}
 	if kind != "" {
-		req.Protocol = ptr(api.EndpointProtocol(kind))
+		req.Protocol = ptr(api.ServiceProtocol(kind))
 	}
 	if access != "" || len(sources) > 0 {
 		req.Access = accessInput(access, sources)
 	}
 	if access == "keys" {
-		req.InitialKey = &api.CreateEndpointKeyRequest{Name: keyName, ExpiresInDays: ex}
+		req.InitialKey = &api.CreateServiceKeyRequest{Name: keyName, ExpiresInDays: ex}
 		if never {
 			req.InitialKey.NoExpiry = ptr(true)
 			a.info("Warning: the first key never expires.")
 		}
 	}
-	return a.postEndpoint(ctx, c, req)
+	return a.postService(ctx, c, req)
 }
 
-func (a *app) postEndpoint(ctx context.Context, c *api.ClientWithResponses, req api.CreateEndpointRequest) error {
-	r, err := c.CreateEndpointWithResponse(ctx, &api.CreateEndpointParams{IdempotencyKey: uuid.NewString()}, req)
+func (a *app) postService(ctx context.Context, c *api.ClientWithResponses, req api.CreateServiceRequest) error {
+	r, err := c.CreateServiceWithResponse(ctx, &api.CreateServiceParams{IdempotencyKey: uuid.NewString()}, req)
 	if err := a.ok(r, err); err != nil {
 		return err
 	}
@@ -642,16 +641,20 @@ func (a *app) postEndpoint(ctx context.Context, c *api.ClientWithResponses, req 
 	if err != nil {
 		return err
 	}
-	e := ec.Endpoint
-	a.info("Created endpoint %s at %s", san(e.Name), san(e.Url))
-	secret := ec.InitialKey.Secret
+	e := ec.Service
+	a.info("Created service %s at %s", san(e.Name), san(e.Url))
+	// A public service makes no key: initial_key is absent (LGN-639).
+	secret := ""
+	if ec.InitialKey != nil {
+		secret = ec.InitialKey.Secret
+	}
 	if secret != "" {
 		a.info("Warning: this is the only time the key secret is shown. Copy it now.")
 		a.info("Call it: curl %s -H 'Authorization: Bearer <key>'", san(e.Url))
 	} else {
-		a.info("It is public: anyone can call %s. Protect it with: legion endpoints update %s --access keys", san(e.Url), san(e.Name))
+		a.info("It is public: anyone can call %s. Protect it with: legion services update %s --access keys", san(e.Url), san(e.Name))
 	}
-	a.info("Watch it: legion endpoints get %s", san(e.Name))
+	a.info("Watch it: legion services get %s", san(e.Name))
 	return a.emit(output.Result{Data: ec, Names: []string{e.Name}, Human: func(w io.Writer) {
 		fmt.Fprintf(w, "Name:    %s\nURL:     %s\nAccess:  %s\n", san(e.Name), san(e.Url), accessLabel(e.Access))
 		if secret != "" {
@@ -660,16 +663,16 @@ func (a *app) postEndpoint(ctx context.Context, c *api.ClientWithResponses, req 
 	}})
 }
 
-func withScaling(in *api.EndpointScalingInput, f func(*api.EndpointScalingInput)) *api.EndpointScalingInput {
+func withScaling(in *api.ServiceScalingInput, f func(*api.ServiceScalingInput)) *api.ServiceScalingInput {
 	if in == nil {
-		in = &api.EndpointScalingInput{}
+		in = &api.ServiceScalingInput{}
 	}
 	f(in)
 	return in
 }
 
-func (a *app) endpointDefaults(ctx context.Context, c *api.ClientWithResponses, catalog *string) (*api.EndpointDefaults, error) {
-	r, err := c.GetEndpointDefaultsWithResponse(ctx, &api.GetEndpointDefaultsParams{CatalogId: catalog})
+func (a *app) serviceDefaults(ctx context.Context, c *api.ClientWithResponses, catalog *string) (*api.ServiceDefaults, error) {
+	r, err := c.GetServiceDefaultsWithResponse(ctx, &api.GetServiceDefaultsParams{CatalogId: catalog})
 	if err := a.ok(r, err); err != nil {
 		return nil, err
 	}
@@ -677,7 +680,7 @@ func (a *app) endpointDefaults(ctx context.Context, c *api.ClientWithResponses, 
 }
 
 // parseExpiry reads 7d, 30d, 90d, 365d or never. Empty means the platform default.
-func parseExpiry(s string) (days *api.CreateEndpointKeyRequestExpiresInDays, never bool, err error) {
+func parseExpiry(s string) (days *api.CreateServiceKeyRequestExpiresInDays, never bool, err error) {
 	switch s {
 	case "":
 		return nil, false, nil
@@ -685,10 +688,10 @@ func parseExpiry(s string) (days *api.CreateEndpointKeyRequestExpiresInDays, nev
 		return nil, true, nil
 	case "7d", "30d", "90d", "365d":
 		n, _ := strconv.Atoi(strings.TrimSuffix(s, "d"))
-		d := api.CreateEndpointKeyRequestExpiresInDays(n)
+		d := api.CreateServiceKeyRequestExpiresInDays(n)
 		return &d, false, nil
 	}
-	return nil, false, usagef("legion endpoints keys create --help", "expiry must be 7d, 30d, 90d, 365d or never, got %q", s)
+	return nil, false, usagef("legion services keys create --help", "expiry must be 7d, 30d, 90d, 365d or never, got %q", s)
 }
 
 func orDefault(s, def string) string {

@@ -16,7 +16,7 @@ func (a *app) catalogCmd() *cobra.Command {
 		Use:   "catalog",
 		Short: "Browse Legion's starter images and premade models",
 		Long: `The catalog lists images that are ready to work in over SSH and premade models that serve
-themselves (an OpenAI-compatible endpoint, for example). Rent one with:
+themselves (an OpenAI-compatible API, for example). Rent one with:
 legion rental create --offer <host> --catalog <id>.`,
 		Example: `  legion catalog list
   legion catalog get qwen3-5-4b`,

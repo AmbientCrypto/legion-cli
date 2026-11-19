@@ -244,7 +244,7 @@ func TestStillBillingNotice(t *testing.T) {
 	contains(t, "interrupt", e, "still billing")
 }
 
-func TestStartAndIngressConfirm(t *testing.T) {
+func TestStartAndServiceCreateConfirm(t *testing.T) {
 	h := newHarness(t)
 	rs := h.rentals()
 	id := rs[1].Id.String()
@@ -258,12 +258,12 @@ func TestStartAndIngressConfirm(t *testing.T) {
 	_, e = h.mustRun("rental", "start", "quiet-meadow-3x9a", "--async")
 	contains(t, "start prompt", e, "$5.00 per hour")
 	h.tty = false
-	h.reply("POST /v1/endpoints", 201, api.EndpointCreated{Endpoint: portEndpoint(api.EndpointAccessPublic)})
-	_, e, c = h.run("rental", "ingress", "add", "quiet-river-7k2f", "--port", "8000")
-	if c != 2 || h.count("POST", "/v1/endpoints") != 0 {
-		t.Fatalf("ingress add without --yes: %d", c)
+	h.reply("POST /v1/services", 201, api.ServiceCreated{Service: portService(api.ServiceAccessPublic)})
+	_, e, c = h.run("services", "create", "--rental", "quiet-river-7k2f", "--port", "8000", "--access", "public")
+	if c != 2 || h.count("POST", "/v1/services") != 0 {
+		t.Fatalf("service create without --yes: %d", c)
 	}
-	contains(t, "ingress", e, "internet")
+	contains(t, "service create", e, "internet")
 }
 
 func TestEscapeSequencesAreStripped(t *testing.T) {

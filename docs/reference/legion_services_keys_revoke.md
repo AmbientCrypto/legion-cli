@@ -1,29 +1,26 @@
-## legion endpoints list
+## legion services keys revoke
 
-List endpoints
+Revoke a key
 
 ### Synopsis
 
-List the organization's endpoints: exposed ports, served models and autoscaled models, with access, scaling, status and URL. Filter with --type model|autoscaled|port or --rental <rental>. Use -o wide for ids and spend.
+Revoke a key by id, name or prefix. Callers using it get 401 within seconds. Revoking a legacy direct key removes direct access to the rental; the service URL keeps working.
 
 ```
-legion endpoints list [flags]
+legion services keys revoke <service> <key> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints list
-  legion endpoints list --type port -o name
-  legion endpoints list --rental quiet-river-7k2f
+  legion services keys revoke chat ci
+  legion services keys revoke chat ci --yes
 ```
 
 ### Options
 
 ```
-  -h, --help            help for list
-      --rental string   only the endpoints that expose this rental
-      --type string     only this type: model, autoscaled or port
+  -h, --help   help for revoke
 ```
 
 ### Options inherited from parent commands
@@ -41,5 +38,5 @@ legion endpoints list [flags]
 
 ### SEE ALSO
 
-* [legion endpoints](legion_endpoints.md)	 - Serve models and ports behind one URL with access keys
+* [legion services keys](legion_services_keys.md)	 - Manage service keys
 

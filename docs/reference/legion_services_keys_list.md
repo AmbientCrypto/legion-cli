@@ -1,28 +1,26 @@
-## legion endpoints autoscale off
+## legion services keys list
 
-Turn off autoscaling and keep one replica as a single rental
+List a service's keys
 
 ### Synopsis
 
-Turn an autoscaled endpoint back into one rental. You pick one ready replica to keep (--keep-replica, a rental
-name or id; on a terminal you are asked); the other replicas drain and stop. The URL and keys stay the same.
+List keys with prefix, status, expiry and last use. Secrets and hashes are never shown. A key marked legacy is a direct key of a rental created before services; its direct URL is in -o wide.
 
 ```
-legion endpoints autoscale off <endpoint> [flags]
+legion services keys list <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints autoscale off chat --keep-replica quiet-river-7k2f --yes
-  legion endpoints autoscale off chat
+  legion services keys list chat
+  legion services keys list chat -o wide
 ```
 
 ### Options
 
 ```
-  -h, --help                  help for off
-      --keep-replica string   rental name or id of the replica to keep
+  -h, --help   help for list
 ```
 
 ### Options inherited from parent commands
@@ -40,5 +38,5 @@ legion endpoints autoscale off <endpoint> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints autoscale](legion_endpoints_autoscale.md)	 - Turn autoscaling on or off for an endpoint
+* [legion services keys](legion_services_keys.md)	 - Manage service keys
 

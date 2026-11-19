@@ -1,21 +1,21 @@
-## legion endpoints autoscale
+## legion services autoscale
 
-Turn autoscaling on or off for an endpoint
+Turn autoscaling on or off for a service
 
 ### Synopsis
 
-Switch an endpoint between one rental (scaling off) and an autoscaled pool (scaling on). The URL and the
+Switch a service between one rental (scaling off) and an autoscaled pool (scaling on). The URL and the
 keys stay the same either way.
 
 ```
-legion endpoints autoscale [flags]
+legion services autoscale [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints autoscale on chat --monthly-cap 300
-  legion endpoints autoscale off chat --keep-replica quiet-river-7k2f
+  legion services autoscale on chat --monthly-cap 300
+  legion services autoscale off chat --keep-replica quiet-river-7k2f
 ```
 
 ### Options
@@ -39,7 +39,7 @@ legion endpoints autoscale [flags]
 
 ### SEE ALSO
 
-* [legion endpoints](legion_endpoints.md)	 - Serve models and ports behind one URL with access keys
-* [legion endpoints autoscale off](legion_endpoints_autoscale_off.md)	 - Turn off autoscaling and keep one replica as a single rental
-* [legion endpoints autoscale on](legion_endpoints_autoscale_on.md)	 - Turn on autoscaling for a single-rental endpoint
+* [legion services](legion_services.md)	 - Give what you run a public URL, with optional service keys
+* [legion services autoscale off](legion_services_autoscale_off.md)	 - Turn off autoscaling and keep one replica as a single rental
+* [legion services autoscale on](legion_services_autoscale_on.md)	 - Turn on autoscaling for a single-rental service
 

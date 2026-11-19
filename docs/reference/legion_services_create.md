@@ -1,14 +1,14 @@
-## legion endpoints create
+## legion services create
 
-Create an endpoint: expose a rental's port, or serve a model on autoscaled GPUs
+Create a service: expose a rental's port, or serve a model on autoscaled GPUs
 
 ### Synopsis
 
-An endpoint is a URL (https://<name>.ambi.run), an access policy and a target.
+A service is a URL (https://<name>.ambi.run), an access policy and a target.
 
 Expose a port of one of your rentals (no extra GPU cost):
-  legion endpoints create --rental <rental> --port 8080 --access keys
---access is public (anyone, the default) or keys (callers need an access key); --source <cidr> (repeatable) limits
+  legion services create --rental <rental> --port 8080 --access keys
+--access is public (anyone, the default) or keys (callers need a service key); --source <cidr> (repeatable) limits
 callers to those networks in either mode. The name defaults to the rental's name.
 
 Serve a model on autoscaled GPUs: --catalog (or --image with --port). Legion rents the cheapest hardware that fits
@@ -23,21 +23,21 @@ workload (needed once per organization).
 On a terminal anything missing is asked for. With keys access the first key is printed ONCE: copy it now.
 
 ```
-legion endpoints create [name] [flags]
+legion services create [name] [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints create --rental quiet-river-7k2f --port 8080 --access keys
-  legion endpoints create chat --catalog llama-3-8b --max-price 2.50 --monthly-cap 400
-  legion endpoints create chat --image ghcr.io/me/serve:1 --port 8000 --min-gpu-memory 24 --gpu-counts 1,2 --max-price 1 --monthly-cap 100 --spot --scale-to-zero --min 0 --yes
+  legion services create --rental quiet-river-7k2f --port 8080 --access keys
+  legion services create chat --catalog llama-3-8b --max-price 2.50 --monthly-cap 400
+  legion services create chat --image ghcr.io/me/serve:1 --port 8000 --min-gpu-memory 24 --gpu-counts 1,2 --max-price 1 --monthly-cap 100 --spot --scale-to-zero --min 0 --yes
 ```
 
 ### Options
 
 ```
-      --access string            public (anyone; default for a rental port) or keys (callers need an access key; default for a model)
+      --access string            public (anyone; default for a rental port) or keys (callers need a service key; default for a model)
       --ack-host-visibility      acknowledge that provider hosts can see the workload (once per organization)
       --arg stringArray          replace the image's default arguments of your own --image: one item per flag (repeatable)
       --catalog string           catalog model id to serve (see: legion catalog list)
@@ -49,7 +49,7 @@ legion endpoints create [name] [flags]
   -h, --help                     help for create
       --image string             your own container image instead of a catalog model (when your organization allows custom images)
       --key-expires string       first key expiry: 7d, 30d, 90d, 365d or never (default: the platform's, 90d)
-      --key-name string          name of the first access key (default "default")
+      --key-name string          name of the first service key (default "default")
       --kind string              protocol: openai (default for a model) or http
       --max int                  maximum replicas (default from the platform)
       --max-price string         highest total price per replica-hour in dollars (all its GPUs), for example 2.50. Default: none
@@ -60,7 +60,7 @@ legion endpoints create [name] [flags]
       --placement string         eligible_hosts (default) or own_hosts
       --port int                 with --rental: the port to expose; with --image: the port the service listens on
       --rental string            expose a port of this rental (name, id or prefix) instead of serving a model
-      --scale-to-zero            let the endpoint scale down to no replicas when idle (cold requests then wait for a replica)
+      --scale-to-zero            let the service scale down to no replicas when idle (cold requests then wait for a replica)
       --secret-env stringArray   secret environment variable NAME (repeatable). The value is read from stdin (one line per secret) or a hidden prompt, stored encrypted and never shown again
       --served-model string      with --image: the model name the service reports
       --setting stringArray      model setting key=value for a catalog model, for example max_model_len=32768 (repeatable; see the catalog entry's settings)
@@ -84,5 +84,5 @@ legion endpoints create [name] [flags]
 
 ### SEE ALSO
 
-* [legion endpoints](legion_endpoints.md)	 - Serve models and ports behind one URL with access keys
+* [legion services](legion_services.md)	 - Give what you run a public URL, with optional service keys
 

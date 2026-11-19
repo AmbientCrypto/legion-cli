@@ -1,4 +1,4 @@
-## legion endpoints keys rotate
+## legion services keys rotate
 
 Replace a key with a new one, keeping the old one for a while
 
@@ -8,14 +8,14 @@ Make a new key with the same name and show its secret ONCE. The old key keeps wo
 (default 24 hours) so you can move callers over, then stops. Revoke the old key at once with 'keys revoke'.
 
 ```
-legion endpoints keys rotate <endpoint> <key> [flags]
+legion services keys rotate <service> <key> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints keys rotate chat ci
-  legion endpoints keys rotate chat ci --overlap-hours 12 --expires 30d
+  legion services keys rotate chat ci
+  legion services keys rotate chat ci --overlap-hours 12 --expires 30d
 ```
 
 ### Options
@@ -41,5 +41,5 @@ legion endpoints keys rotate <endpoint> <key> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints keys](legion_endpoints_keys.md)	 - Manage an endpoint's access keys
+* [legion services keys](legion_services_keys.md)	 - Manage service keys
 
