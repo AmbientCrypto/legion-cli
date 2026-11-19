@@ -274,7 +274,7 @@ Missing flags are asked for on a terminal. In scripts pass --offer, an image (--
 			a.info("Running.")
 			a.info("Connect: legion ssh %s", final.Name)
 			if final.Serve != nil {
-				a.info("Model endpoint and key: legion rental serve %s", final.Name)
+				a.info("Service URL and key: legion rental serve %s", final.Name)
 			}
 			a.info("Stop billing: legion rental stop %s", final.Name)
 			return a.emit(a.one(*final))

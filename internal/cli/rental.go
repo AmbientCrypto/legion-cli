@@ -31,7 +31,7 @@ Leave the name out on a terminal to pick from a list.`,
 	})
 	cmd.AddCommand(a.rentalListCmd(), a.rentalGetCmd(), a.rentalCreateCmd(), a.rentalStopCmd(), a.rentalStartCmd(),
 		a.rentalDeleteCmd(), a.rentalWaitCmd(), a.rentalSSHCmd(false), a.rentalSSHConfigCmd(), a.rentalChargesCmd(),
-		a.rentalServeCmd(), a.rentalEnvCmd(), a.ingressCmd(), a.backupCmd(), a.exportCmd())
+		a.rentalServeCmd(), a.rentalEnvCmd(), a.backupCmd(), a.exportCmd())
 	return cmd
 }
 
@@ -529,7 +529,7 @@ func signed(m api.SignedMoney) string { return output.Money(m.AmountMinor, strin
 func (a *app) rentalServeCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve <rental>",
-		Short: "Show the endpoint and API key of a premade model rental",
+		Short: "Show the service URL and API key of a premade model rental",
 		Long: `For a rental created from a premade model (legion rental create --catalog <model>), show the
 public URL, its status and the service API key (lsk_...). The key is a secret: it is shown here only
 when you ask, never in 'rental get'.`,
@@ -548,7 +548,7 @@ when you ask, never in 'rental get'.`,
 				return a.emit(output.Result{Data: s, Human: func(w io.Writer) {
 					fmt.Fprintf(w, "Model:    %s (%s)\nStatus:   %s", san(s.Model), s.Kind, s.Status)
 					if s.StatusReason != nil {
-						fmt.Fprintf(w, " (%s)", san(*s.StatusReason))
+						fmt.Fprintf(w, " (%s)", reasonText(*s.StatusReason))
 					}
 					fmt.Fprintf(w, "\nURL:      %s\nAPI key:  %s\n", san(ptrOr(s.Url, "(not ready yet)")), s.ApiKey)
 				}})

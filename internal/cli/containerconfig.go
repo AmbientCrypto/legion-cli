@@ -14,7 +14,7 @@ import (
 // ---- container configuration flags (LGN-628) ----
 //
 // --env, --secret-env, --setting, --command and --arg are shared by rental
-// create and endpoints create/update. The checks here are the cheap ones that
+// create and services create/update. The checks here are the cheap ones that
 // save a round trip; the controller is authoritative and its refusals are
 // shown as they come.
 

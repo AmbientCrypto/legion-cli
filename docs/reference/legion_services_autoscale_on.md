@@ -1,26 +1,26 @@
-## legion endpoints autoscale on
+## legion services autoscale on
 
-Turn on autoscaling for a single-rental endpoint
+Turn on autoscaling for a single-rental service
 
 ### Synopsis
 
-Turn a single-rental endpoint into an autoscaled one. Hardware starts as the rental's own GPU type and count
+Turn a single-rental service into an autoscaled one. Hardware starts as the rental's own GPU type and count
 (narrow it with --gpu models, --max-price per replica-hour and --spot); scaling defaults to the platform's
 (override --min, --max, --scale-to-zero, --target-concurrency); --monthly-cap is required.
 
---keep-rental (default) makes the current rental the first replica and moves its lifecycle to the endpoint.
+--keep-rental (default) makes the current rental the first replica and moves its lifecycle to the service.
 --replace starts fresh replicas on other hosts and stops this rental once they are ready. You see the cost
 floor and ceiling and confirm (or pass --yes).
 
 ```
-legion endpoints autoscale on <endpoint> [flags]
+legion services autoscale on <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints autoscale on chat --monthly-cap 300 --max 3
-  legion endpoints autoscale on chat --gpu H100 --max-price 2.50 --monthly-cap 300 --replace --yes
+  legion services autoscale on chat --monthly-cap 300 --max 3
+  legion services autoscale on chat --gpu H100 --max-price 2.50 --monthly-cap 300 --replace --yes
 ```
 
 ### Options
@@ -37,7 +37,7 @@ legion endpoints autoscale on <endpoint> [flags]
       --monthly-cap string       monthly spend cap in dollars (UTC calendar month), required
       --placement string         eligible_hosts (default) or own_hosts
       --replace                  start fresh replicas and stop the current rental when they are ready
-      --scale-to-zero            let the endpoint scale down to no replicas when idle (cold requests then wait for a replica)
+      --scale-to-zero            let the service scale down to no replicas when idle (cold requests then wait for a replica)
       --spot                     use spot (interruptible) capacity: cheaper, but replicas can be preempted
       --target-concurrency int   concurrent requests per replica before another is added
 ```
@@ -57,5 +57,5 @@ legion endpoints autoscale on <endpoint> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints autoscale](legion_endpoints_autoscale.md)	 - Turn autoscaling on or off for an endpoint
+* [legion services autoscale](legion_services_autoscale.md)	 - Turn autoscaling on or off for a service
 

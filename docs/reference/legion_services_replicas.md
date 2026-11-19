@@ -1,26 +1,27 @@
-## legion endpoints keys revoke
+## legion services replicas
 
-Revoke a key
+List a service's replicas
 
 ### Synopsis
 
-Revoke a key by id, name or prefix. Callers using it get 401 within seconds. Revoking a legacy direct key removes direct access to the rental; the endpoint URL keeps working.
+List the replicas (rentals) serving the service, live and warm. --all adds the replicas retired in the last 7 days.
 
 ```
-legion endpoints keys revoke <endpoint> <key> [flags]
+legion services replicas <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints keys revoke chat ci
-  legion endpoints keys revoke chat ci --yes
+  legion services replicas chat
+  legion services replicas chat --all -o wide
 ```
 
 ### Options
 
 ```
-  -h, --help   help for revoke
+      --all    include replicas retired in the last 7 days
+  -h, --help   help for replicas
 ```
 
 ### Options inherited from parent commands
@@ -38,5 +39,5 @@ legion endpoints keys revoke <endpoint> <key> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints keys](legion_endpoints_keys.md)	 - Manage an endpoint's access keys
+* [legion services](legion_services.md)	 - Give what you run a public URL, with optional service keys
 

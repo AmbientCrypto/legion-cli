@@ -125,8 +125,22 @@ func describeAPI(e *client.Error, path string) Described {
 		d.Hint = "Wait until it is ready: legion rental export get <rental> <export-id>"
 	case e.Code == "step_up_required":
 		d.Hint = "This action needs step-up verification, which only a browser session can give: do it in the Legion console"
-	case e.Code == "endpoint_name_taken":
-		d.Hint = "Pick another name, or see yours: legion endpoints list"
+	case e.Code == "service_name_taken":
+		d.Hint = "Pick another name, or see yours: legion services list"
+	case e.Code == "invalid_service_name":
+		d.Hint = "Pick a different name: legion services create --help"
+	case e.Code == "too_many_services":
+		d.Hint = "Delete one you no longer use: legion services delete <service>"
+	case e.Code == "service_limit":
+		d.Message = "You have reached the limit of services for this organization or rental."
+		d.Hint = "Delete one you no longer use: legion services delete <service>"
+	case e.Code == "service_unavailable":
+		d.Message = "Legion cannot give this port a public URL right now."
+		d.Hint = "Try again in a moment. If it keeps happening, contact Ambient support."
+	case e.Code == "service_not_found":
+		d.Hint = "See your services: legion services list"
+	case e.Code == "rental_managed_by_service":
+		d.Hint = "Change the service instead: legion services update <service>"
 	case e.Code == "host_visibility_required":
 		d.Hint = "Add --ack-host-visibility to acknowledge that provider hosts can see the workload"
 	case e.Code == "rate_limited" || e.Status == 429:
@@ -145,10 +159,8 @@ func listHint(path string) string {
 		return "legion rental list"
 	}
 	switch {
-	case strings.HasPrefix(path, "endpoints"), strings.HasPrefix(path, "endpoint"), strings.HasPrefix(path, "ep "):
-		return "legion endpoints list"
-	case strings.Contains(path, "ingress"):
-		return "legion rental ingress list <rental>"
+	case strings.HasPrefix(path, "services"), strings.HasPrefix(path, "service"), strings.HasPrefix(path, "svc"):
+		return "legion services list"
 	case strings.Contains(path, "backup"):
 		return "legion rental backup list"
 	case strings.Contains(path, "export"):

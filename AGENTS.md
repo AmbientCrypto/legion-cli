@@ -11,6 +11,7 @@ Read by Claude Code (CLAUDE.md is a symlink to this file), Codex, and other codi
 - Never print or log the API key or the `Authorization` header.
 - Bumping the controller API: `go get github.com/AmbientCrypto/legion-controller/api@<tag>`, fix compile errors, run the tests.
 - Downloads (LGN-551): workspace exports carry no URL on read. `rental export estimate` shows the price, `rental export link` shows the charge, confirms (or `--yes`), sends an `Idempotency-Key` and prints the single-use URL. `rental backup download-link` says whether the link is included or charged. A reused or expired link is 410 `link_used`, worded in `describeAPI`. Prices come from the API, never hard-coded.
+- Services (LGN-639): "endpoints" are now "services" (`legion services`, alias `svc`; `endpoints`, `ep` and `legion rental ingress` are gone, no aliases). The API has `ServiceMode {rental, autoscaled}` (labels "On a rental" / "Autoscaled") in place of the old type and target kind; `--access public|keys` stays the API's value, shown as "Public" / "API key required"; keys are "service keys". `list` filters with `--mode rental|autoscaled` and `--rental` (server-side `rental_id`). Problem codes `service_*` are worded in `describeAPI`. A rental's exposed ports are its services: `legion services list --rental <rental>`.
 - Private module: `export GOPRIVATE='github.com/AmbientCrypto/*'`.
 
 ## Jira & branch conventions (Atlassian-enabled)

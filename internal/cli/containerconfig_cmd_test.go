@@ -98,14 +98,14 @@ func TestRentalCreateConfigRefusals(t *testing.T) {
 	}
 }
 
-func TestEndpointsCreateConfiguration(t *testing.T) {
+func TestServicesCreateConfiguration(t *testing.T) {
 	h := newHarness(t)
-	h.epFixtures()
-	h.epCreated()
+	h.svcFixtures()
+	h.svcCreated()
 	h.stdin = "tok_SECRET\n"
-	out, errs := h.mustRun("endpoints", "create", "my-ep", "--image", "ghcr.io/me/serve:1", "--port", "8000", "--monthly-cap", "400", "--yes",
+	out, errs := h.mustRun("services", "create", "my-svc", "--image", "ghcr.io/me/serve:1", "--port", "8000", "--monthly-cap", "400", "--yes",
 		"--env", "A=1", "--secret-env", "TOK", "--command", "serve", "--arg", "--fast")
-	tg := body[api.CreateEndpointRequest](t, h.last("POST", "/v1/endpoints")).Target
+	tg := body[api.CreateServiceRequest](t, h.last("POST", "/v1/services")).Target
 	if tg.Env == nil || len(*tg.Env) != 2 || !ptrOr((*tg.Env)[1].Secret, false) || ptrOr((*tg.Env)[1].Value, "") != "tok_SECRET" {
 		t.Fatalf("%+v", tg.Env)
 	}
@@ -120,28 +120,28 @@ func TestEndpointsCreateConfiguration(t *testing.T) {
 	}
 
 	h2 := newHarness(t)
-	h2.epFixtures()
-	h2.epCreated()
-	h2.mustRun(epCreateArgs("--yes", "--setting", "max_model_len=8192")...)
-	tg = body[api.CreateEndpointRequest](t, h2.last("POST", "/v1/endpoints")).Target
+	h2.svcFixtures()
+	h2.svcCreated()
+	h2.mustRun(svcCreateArgs("--yes", "--setting", "max_model_len=8192")...)
+	tg = body[api.CreateServiceRequest](t, h2.last("POST", "/v1/services")).Target
 	if tg.ModelSettings == nil || len(*tg.ModelSettings) != 1 {
 		t.Fatalf("%+v", tg.ModelSettings)
 	}
-	_, _, code := h2.run(epCreateArgs("--yes", "--command", "x")...)
+	_, _, code := h2.run(svcCreateArgs("--yes", "--command", "x")...)
 	if code != 2 {
 		t.Fatalf("command on a catalog model: exit %d", code)
 	}
 }
 
-func TestEndpointsUpdateEnvMergesAndKeepsSecrets(t *testing.T) {
+func TestServicesUpdateEnvMergesAndKeepsSecrets(t *testing.T) {
 	h := newHarness(t)
-	e := epFixture(1, "chat", modeAuto)
+	e := svcFixture(1, "chat", modeAuto)
 	e.Target.Template.Env = &[]api.EnvVar{{Name: "KEEP", Value: ptr("1")}, {Name: "DROP", Value: ptr("2")}, {Name: "TOK", Secret: true}}
-	h.epFixtures(e)
-	h.reply("GET /v1/endpoints/"+uidS(1), 200, e)
-	h.reply("PATCH /v1/endpoints/"+uidS(1), 200, e)
-	_, errs := h.mustRun("endpoints", "update", "chat", "--env", "NEW=3", "--unset-env", "DROP", "--yes")
-	req := body[api.UpdateEndpointRequest](t, h.last("PATCH", "/v1/endpoints/"+uidS(1)))
+	h.svcFixtures(e)
+	h.reply("GET /v1/services/"+uidS(1), 200, e)
+	h.reply("PATCH /v1/services/"+uidS(1), 200, e)
+	_, errs := h.mustRun("services", "update", "chat", "--env", "NEW=3", "--unset-env", "DROP", "--yes")
+	req := body[api.UpdateServiceRequest](t, h.last("PATCH", "/v1/services/"+uidS(1)))
 	if req.Target == nil || req.Target.Env == nil {
 		t.Fatalf("%+v", req)
 	}
@@ -158,21 +158,21 @@ func TestEndpointsUpdateEnvMergesAndKeepsSecrets(t *testing.T) {
 	contains(t, "stderr", errs, "replaced one at a time")
 }
 
-func TestEndpointsUpdateClearAndRefuse(t *testing.T) {
+func TestServicesUpdateClearAndRefuse(t *testing.T) {
 	h := newHarness(t)
-	e := epFixture(1, "chat", modeAuto)
-	h.epFixtures(e, epFixture(2, "port", modeOff))
-	h.reply("GET /v1/endpoints/"+uidS(1), 200, e)
-	h.reply("PATCH /v1/endpoints/"+uidS(1), 200, e)
-	h.mustRun("endpoints", "update", "chat", "--clear-settings", "--yes")
-	req := body[api.UpdateEndpointRequest](t, h.last("PATCH", "/v1/endpoints/"+uidS(1)))
+	e := svcFixture(1, "chat", modeAuto)
+	h.svcFixtures(e, svcFixture(2, "port", modeOff))
+	h.reply("GET /v1/services/"+uidS(1), 200, e)
+	h.reply("PATCH /v1/services/"+uidS(1), 200, e)
+	h.mustRun("services", "update", "chat", "--clear-settings", "--yes")
+	req := body[api.UpdateServiceRequest](t, h.last("PATCH", "/v1/services/"+uidS(1)))
 	if req.Target == nil || req.Target.ModelSettings == nil || len(*req.Target.ModelSettings) != 0 {
 		t.Fatalf("%+v", req.Target)
 	}
-	h.reply("GET /v1/endpoints/"+uidS(2), 200, epFixture(2, "port", modeOff))
-	_, _, code := h.run("endpoints", "update", "port", "--env", "A=1", "--yes")
+	h.reply("GET /v1/services/"+uidS(2), 200, svcFixture(2, "port", modeOff))
+	_, _, code := h.run("services", "update", "port", "--env", "A=1", "--yes")
 	if code != 2 {
-		t.Fatalf("env on a port endpoint: exit %d", code)
+		t.Fatalf("env on a port service: exit %d", code)
 	}
 }
 

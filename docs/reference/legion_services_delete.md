@@ -1,27 +1,28 @@
-## legion endpoints events
+## legion services delete
 
-Show scaling and configuration history
+Delete a service, its replicas and its keys
 
 ### Synopsis
 
-Show what changed and why: scaling steps, config changes and key activity, newest first.
+Delete the service: replicas stop, every key stops working and the URL goes away. This cannot be undone.
+On a terminal you must type the service's name to confirm; in scripts pass --yes. The API may ask for step-up
+verification, which needs a browser session.
 
 ```
-legion endpoints events <endpoint> [flags]
+legion services delete <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints events chat
-  legion endpoints events chat --limit 20 -o json
+  legion services delete chat
+  legion services delete chat --yes
 ```
 
 ### Options
 
 ```
-  -h, --help        help for events
-      --limit int   how many events at most (0 for all) (default 50)
+  -h, --help   help for delete
 ```
 
 ### Options inherited from parent commands
@@ -39,5 +40,5 @@ legion endpoints events <endpoint> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints](legion_endpoints.md)	 - Serve models and ports behind one URL with access keys
+* [legion services](legion_services.md)	 - Give what you run a public URL, with optional service keys
 

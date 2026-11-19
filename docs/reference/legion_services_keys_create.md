@@ -1,22 +1,22 @@
-## legion endpoints keys create
+## legion services keys create
 
-Create an access key
+Create a service key
 
 ### Synopsis
 
 Create a key. The secret is shown ONCE, here, and cannot be retrieved later: copy it now. --expires takes 7d,
 30d, 90d, 365d or never (default 90d); a key that never expires may need step-up verification. At most 10 active
-keys per endpoint. -o name prints only the secret.
+keys per service. -o name prints only the secret.
 
 ```
-legion endpoints keys create <endpoint> [flags]
+legion services keys create <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints keys create chat --name ci --expires 30d
-  legion endpoints keys create chat --name bot -q -o name
+  legion services keys create chat --name ci --expires 30d
+  legion services keys create chat --name bot -q -o name
 ```
 
 ### Options
@@ -25,7 +25,7 @@ legion endpoints keys create <endpoint> [flags]
       --expires string   7d, 30d, 90d, 365d or never (default 90d)
   -h, --help             help for create
       --name string      a name for the key, for example ci
-      --rate-limit int   requests per minute this key may make (default: the endpoint's)
+      --rate-limit int   requests per minute this key may make (default: the service's)
 ```
 
 ### Options inherited from parent commands
@@ -43,5 +43,5 @@ legion endpoints keys create <endpoint> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints keys](legion_endpoints_keys.md)	 - Manage an endpoint's access keys
+* [legion services keys](legion_services_keys.md)	 - Manage service keys
 

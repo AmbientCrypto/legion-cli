@@ -1,27 +1,29 @@
-## legion endpoints pause
+## legion services list
 
-Stop serving and release the replicas
+List services
 
 ### Synopsis
 
-Pause: no replicas run and no GPU cost accrues. The URL and keys are kept and callers get 503
-endpoint_paused until you resume. Warm replicas are released after the warm expiry.
+List the organization's services, on a rental or autoscaled, with access, scaling, status and Service URL. Filter with --mode rental|autoscaled or --rental <rental>. Use -o wide for ids and spend.
 
 ```
-legion endpoints pause <endpoint> [flags]
+legion services list [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints pause chat
-  legion endpoints pause chat -o json
+  legion services list
+  legion services list --mode rental -o name
+  legion services list --rental quiet-river-7k2f
 ```
 
 ### Options
 
 ```
-  -h, --help   help for pause
+  -h, --help            help for list
+      --mode string     only this mode: rental or autoscaled
+      --rental string   only the services on this rental
 ```
 
 ### Options inherited from parent commands
@@ -39,5 +41,5 @@ legion endpoints pause <endpoint> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints](legion_endpoints.md)	 - Serve models and ports behind one URL with access keys
+* [legion services](legion_services.md)	 - Give what you run a public URL, with optional service keys
 

@@ -1,26 +1,28 @@
-## legion rental ingress remove
+## legion services usage
 
-Deprecated: stop exposing a port
+Show requests, errors, replica-hours and cost per day
 
 ### Synopsis
 
-Deprecated: same as 'legion endpoints delete <endpoint>'. <rule-id> is the old rule id (see 'legion rental ingress list -o wide'), or an endpoint name or id.
+Show the service's usage per day (requests, errors, replica-hours, cost) and this month's spend against the monthly cap. Request-rate and latency points for the --window are in -o json.
 
 ```
-legion rental ingress remove <rental> <rule-id> [flags]
+legion services usage <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion rental ingress remove quiet-river-7k2f quiet-river-7k2f --yes
-  legion rental ingress remove quiet 6f1c... --yes
+  legion services usage chat
+  legion services usage chat --days 7 -o json
 ```
 
 ### Options
 
 ```
-  -h, --help   help for remove
+      --days int        how many days back (default 30)
+  -h, --help            help for usage
+      --window string   traffic window for the request-rate points in -o json: 1h, 24h or 7d
 ```
 
 ### Options inherited from parent commands
@@ -38,5 +40,5 @@ legion rental ingress remove <rental> <rule-id> [flags]
 
 ### SEE ALSO
 
-* [legion rental ingress](legion_rental_ingress.md)	 - Deprecated: use 'legion endpoints' to expose a port
+* [legion services](legion_services.md)	 - Give what you run a public URL, with optional service keys
 

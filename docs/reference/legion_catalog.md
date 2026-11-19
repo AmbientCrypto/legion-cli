@@ -5,7 +5,7 @@ Browse Legion's starter images and premade models
 ### Synopsis
 
 The catalog lists images that are ready to work in over SSH and premade models that serve
-themselves (an OpenAI-compatible endpoint, for example). Rent one with:
+themselves (an OpenAI-compatible API, for example). Rent one with:
 legion rental create --offer <host> --catalog <id>.
 
 ```

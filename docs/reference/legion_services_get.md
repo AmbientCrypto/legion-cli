@@ -1,28 +1,26 @@
-## legion endpoints delete
+## legion services get
 
-Delete an endpoint, its replicas and its keys
+Show one service
 
 ### Synopsis
 
-Delete the endpoint: replicas stop, every key stops working and the URL goes away. This cannot be undone.
-On a terminal you must type the endpoint's name to confirm; in scripts pass --yes. The API may ask for step-up
-verification, which needs a browser session.
+Show a service's URL, status, hardware, replicas and spend. <service> is an id, a name or a unique prefix.
 
 ```
-legion endpoints delete <endpoint> [flags]
+legion services get <service> [flags]
 ```
 
 ### Examples
 
 ```
-  legion endpoints delete chat
-  legion endpoints delete chat --yes
+  legion services get chat
+  legion services get chat -o json
 ```
 
 ### Options
 
 ```
-  -h, --help   help for delete
+  -h, --help   help for get
 ```
 
 ### Options inherited from parent commands
@@ -40,5 +38,5 @@ legion endpoints delete <endpoint> [flags]
 
 ### SEE ALSO
 
-* [legion endpoints](legion_endpoints.md)	 - Serve models and ports behind one URL with access keys
+* [legion services](legion_services.md)	 - Give what you run a public URL, with optional service keys
 

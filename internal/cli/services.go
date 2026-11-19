@@ -16,34 +16,34 @@ import (
 	"github.com/AmbientCrypto/legion-cli/internal/output"
 )
 
-const endpointsLong = `Endpoints are served models and exposed ports behind one URL and one set of access keys.
-An endpoint is either a single rental (scaling off) or an autoscaled pool of replicas (scaling auto);
-both keep the same URL and keys when you switch with 'legion endpoints autoscale on|off'.
+const servicesLong = `A service is a public URL for something you run on Legion. Point it at a port on one of your rentals, or let Legion run your model on rented GPUs and scale it with traffic, down to zero when idle.
+A service is either on a rental (autoscaling off, one rental) or autoscaled (a pool of replicas);
+both keep the same Service URL and service keys when you switch with 'legion services autoscale on|off'.
 
 Replicas bill like rentals, per GPU-hour from start, including loading. Every create and spend change shows
 a cost floor and ceiling and asks for confirmation (or pass --yes). The monthly cap (UTC calendar month)
 stops serving until the next month or until you raise it. A replica is what Vast and RunPod call a worker.`
 
-func (a *app) endpointsCmd() *cobra.Command {
+func (a *app) servicesCmd() *cobra.Command {
 	cmd := group(&cobra.Command{
-		Use:     "endpoints",
-		Aliases: []string{"endpoint", "ep"},
-		Short:   "Serve models and ports behind one URL with access keys",
-		Long:    endpointsLong,
-		Example: `  legion endpoints list
-  legion endpoints create chat --catalog llama-3-8b --max-price 2.50 --monthly-cap 400
-  legion endpoints keys create chat --name ci --expires 30d`,
+		Use:     "services",
+		Aliases: []string{"svc"},
+		Short:   "Give what you run a public URL, with optional service keys",
+		Long:    servicesLong,
+		Example: `  legion services list
+  legion services create chat --catalog llama-3-8b --max-price 2.50 --monthly-cap 400
+  legion services keys create chat --name ci --expires 30d`,
 	})
-	cmd.AddCommand(a.epListCmd(), a.epGetCmd(), a.epCreateCmd(), a.epUpdateCmd(), a.epPauseCmd(), a.epResumeCmd(), a.epDeleteCmd(),
-		a.epReplicasCmd(), a.epUsageCmd(), a.epEventsCmd(), a.epAutoscaleCmd(), a.epKeysCmd())
+	cmd.AddCommand(a.svcListCmd(), a.svcGetCmd(), a.svcCreateCmd(), a.svcUpdateCmd(), a.svcPauseCmd(), a.svcResumeCmd(), a.svcDeleteCmd(),
+		a.svcReplicasCmd(), a.svcUsageCmd(), a.svcEventsCmd(), a.svcAutoscaleCmd(), a.svcKeysCmd())
 	return cmd
 }
 
 // ---- fetching and resolving ----
 
-func (a *app) listEndpoints(ctx context.Context, c *api.ClientWithResponses) ([]api.Endpoint, error) {
-	return collect(0, func(cur *string, n int) ([]api.Endpoint, *string, error) {
-		r, err := c.ListEndpointsWithResponse(ctx, &api.ListEndpointsParams{Cursor: cur, Limit: &n})
+func (a *app) listServices(ctx context.Context, c *api.ClientWithResponses, rental *api.RentalID) ([]api.Service, error) {
+	return collect(0, func(cur *string, n int) ([]api.Service, *string, error) {
+		r, err := c.ListServicesWithResponse(ctx, &api.ListServicesParams{RentalId: rental, Cursor: cur, Limit: &n})
 		if err := a.ok(r, err); err != nil {
 			return nil, nil, err
 		}
@@ -55,22 +55,22 @@ func (a *app) listEndpoints(ctx context.Context, c *api.ClientWithResponses) ([]
 	})
 }
 
-// pickEndpoint resolves the <endpoint> argument (id, name or unique prefix),
+// pickService resolves the <service> argument (id, name or unique prefix),
 // or offers a picker on a terminal when it is missing.
-func (a *app) pickEndpoint(ctx context.Context, c *api.ClientWithResponses, as []string) (*api.Endpoint, error) {
+func (a *app) pickService(ctx context.Context, c *api.ClientWithResponses, as []string) (*api.Service, error) {
 	if len(as) == 0 && !a.interactive() {
-		return nil, usagef("legion "+a.cmdPath+" --help", "missing required argument <endpoint>")
+		return nil, usagef("legion "+a.cmdPath+" --help", "missing required argument <service>")
 	}
-	all, err := a.listEndpoints(ctx, c)
+	all, err := a.listServices(ctx, c, nil)
 	if err != nil {
 		return nil, err
 	}
 	if len(as) == 0 {
 		labels := make([]string, len(all))
 		for i, e := range all {
-			labels[i] = output.Sanitize(fmt.Sprintf("%-24s %-17s %s", e.Name, typeLabel(e.Type), e.Status))
+			labels[i] = output.Sanitize(fmt.Sprintf("%-24s %-17s %s", e.Name, modeLabel(e.Mode), e.Status))
 		}
-		i, err := a.pickOne("Which endpoint?", labels, "missing required argument <endpoint>", "legion endpoints list")
+		i, err := a.pickOne("Which service?", labels, "missing required argument <service>", "legion services list")
 		if err != nil {
 			return nil, err
 		}
@@ -88,7 +88,7 @@ func (a *app) pickEndpoint(ctx context.Context, c *api.ClientWithResponses, as [
 	}
 	switch len(hits) {
 	case 0:
-		return nil, notFoundf("legion endpoints list", "no endpoint %q", as[0])
+		return nil, notFoundf("legion services list", "no service %q", as[0])
 	case 1:
 		return &all[hits[0]], nil
 	}
@@ -96,16 +96,16 @@ func (a *app) pickEndpoint(ctx context.Context, c *api.ClientWithResponses, as [
 	for _, i := range hits {
 		names = append(names, all[i].Name)
 	}
-	return nil, usagef("legion endpoints list", "%q matches several endpoints: %s", as[0], strings.Join(names, ", "))
+	return nil, usagef("legion services list", "%q matches several services: %s", as[0], strings.Join(names, ", "))
 }
 
-func (a *app) withEndpoint(cmd *cobra.Command, as []string, fn func(ctx context.Context, c *api.ClientWithResponses, e *api.Endpoint) error) error {
+func (a *app) withService(cmd *cobra.Command, as []string, fn func(ctx context.Context, c *api.ClientWithResponses, e *api.Service) error) error {
 	c, err := a.api()
 	if err != nil {
 		return err
 	}
 	ctx := a.ctx(cmd)
-	e, err := a.pickEndpoint(ctx, c, as)
+	e, err := a.pickService(ctx, c, as)
 	if err != nil {
 		return err
 	}
@@ -114,51 +114,61 @@ func (a *app) withEndpoint(cmd *cobra.Command, as []string, fn func(ctx context.
 
 // ---- labels ----
 
-func typeLabel(t api.EndpointType) string {
-	switch t {
-	case api.EndpointTypeModel:
-		return "Model"
-	case api.EndpointTypeAutoscaledModel:
-		return "Autoscaled model"
-	case api.EndpointTypePort:
-		return "Port"
+func modeLabel(m api.ServiceMode) string {
+	switch m {
+	case api.ServiceModeRental:
+		return "On a rental"
+	case api.ServiceModeAutoscaled:
+		return "Autoscaled"
 	}
-	return string(t)
+	return string(m)
 }
 
-func epAutoscaled(e api.Endpoint) bool { return e.Target.Kind == api.EndpointTargetAutoscale }
+// accessWord is the label for an access mode: the --access flag values stay
+// public and keys, the words shown to people are Public and API key required.
+func accessWord(m api.ServiceAccessMode) string {
+	switch m {
+	case api.ServiceAccessPublic:
+		return "Public"
+	case api.ServiceAccessKeys:
+		return "API key required"
+	}
+	return string(m)
+}
 
-func epScaling(e api.Endpoint) api.EndpointScaling {
+func svcAutoscaled(e api.Service) bool { return e.Target.Mode == api.ServiceModeAutoscaled }
+
+func svcScaling(e api.Service) api.ServiceScaling {
 	if e.Target.Scaling != nil {
 		return *e.Target.Scaling
 	}
-	return api.EndpointScaling{}
+	return api.ServiceScaling{}
 }
 
-func epHardware(e api.Endpoint) api.EndpointHardware {
+func svcHardware(e api.Service) api.ServiceHardware {
 	if e.Target.Hardware != nil {
 		return *e.Target.Hardware
 	}
-	return api.EndpointHardware{}
+	return api.ServiceHardware{}
 }
 
-func epCatalog(e api.Endpoint) *string {
+func svcCatalog(e api.Service) *string {
 	if e.Target.Template != nil {
 		return e.Target.Template.CatalogId
 	}
 	return nil
 }
 
-func scalingLabel(e api.Endpoint) string {
-	if !epAutoscaled(e) {
+func scalingLabel(e api.Service) string {
+	if !svcAutoscaled(e) {
 		return "Off, 1 rental"
 	}
-	s := epScaling(e)
+	s := svcScaling(e)
 	return fmt.Sprintf("Auto, %d to %d", s.MinReplicas, s.MaxReplicas)
 }
 
-func accessLabel(a api.EndpointAccess) string {
-	s := string(a.Mode)
+func accessLabel(a api.ServiceAccess) string {
+	s := accessWord(a.Mode)
 	if a.Sources != nil && len(*a.Sources) > 0 {
 		s += ", limited to " + strings.Join(*a.Sources, ",")
 	}
@@ -181,7 +191,7 @@ func tierLabel(t *api.RentalTier) string {
 	return "on demand"
 }
 
-func hwText(h api.EndpointHardware) string {
+func hwText(h api.ServiceHardware) string {
 	s := "cheapest that fits"
 	if h.GpuModels != nil && len(*h.GpuModels) > 0 {
 		s += ", only " + san(strings.Join(*h.GpuModels, ", "))
@@ -203,32 +213,44 @@ func hwText(h api.EndpointHardware) string {
 	return s
 }
 
-func statusText(e api.Endpoint) string {
+func statusText(e api.Service) string {
 	s := string(e.Status)
 	if e.StatusReason != nil && *e.StatusReason != "" {
-		s += " (" + san(*e.StatusReason) + ")"
+		s += " (" + reasonText(*e.StatusReason) + ")"
 	}
 	return s
 }
 
-func epResult(es []api.Endpoint) output.Result {
-	return listResult(es, []string{"NAME", "TYPE", "ACCESS", "SCALING", "STATUS", "REPLICAS", "URL"}, []string{"ID", "SPEND THIS MONTH"},
-		func(e api.Endpoint) string { return e.Name },
-		func(e api.Endpoint) []string {
+// reasonText words a status reason in plain language; reasons it does not
+// know are shown as the API sent them.
+func reasonText(r string) string {
+	switch r {
+	case "service_unavailable":
+		return "Legion cannot give this port a public URL right now"
+	case "service_limit":
+		return "limit of services reached"
+	}
+	return san(r)
+}
+
+func svcResult(es []api.Service) output.Result {
+	return listResult(es, []string{"NAME", "MODE", "ACCESS", "SCALING", "STATUS", "REPLICAS", "URL"}, []string{"ID", "SPEND THIS MONTH"},
+		func(e api.Service) string { return e.Name },
+		func(e api.Service) []string {
 			spend := moneyStr(e.SpendThisMonth.Estimated)
 			if e.SpendThisMonth.Cap != nil {
 				spend += " of " + moneyStr(*e.SpendThisMonth.Cap)
 			}
-			return []string{san(e.Name), typeLabel(e.Type), string(e.Access.Mode), scalingLabel(e), string(e.Status),
+			return []string{san(e.Name), modeLabel(e.Mode), accessWord(e.Access.Mode), scalingLabel(e), string(e.Status),
 				fmt.Sprintf("%d/%d", e.Replicas.Ready, e.Replicas.Desired), san(e.Url), e.Id.String(), spend}
 		})
 }
 
-func epDetail(w io.Writer, e api.Endpoint) {
-	fmt.Fprintf(w, "Name:       %s\nID:         %s\nURL:        %s\nType:       %s\nAccess:     %s\nScaling:    %s\nStatus:     %s\nState:      %s\nProtocol:   %s\n",
-		san(e.Name), e.Id, san(e.Url), typeLabel(e.Type), accessLabel(e.Access), scalingLabel(e), statusText(e), e.State, e.Protocol)
+func svcDetail(w io.Writer, e api.Service) {
+	fmt.Fprintf(w, "Name:       %s\nID:         %s\nService URL: %s\nMode:       %s\nAccess:     %s\nScaling:    %s\nStatus:     %s\nState:      %s\nProtocol:   %s\n",
+		san(e.Name), e.Id, san(e.Url), modeLabel(e.Mode), accessLabel(e.Access), scalingLabel(e), statusText(e), e.State, e.Protocol)
 	t := e.Target
-	if epAutoscaled(e) {
+	if svcAutoscaled(e) {
 		if tp := t.Template; tp != nil {
 			defer writeStoredConfig(w, tp.Env, tp.ModelSettings, tp.Command, tp.Args)
 			src := tp.Image
@@ -237,8 +259,8 @@ func epDetail(w io.Writer, e api.Endpoint) {
 			}
 			fmt.Fprintf(w, "Model:      %s (%s on port %d)\n", san(src), san(tp.Model), tp.Port)
 		}
-		fmt.Fprintf(w, "Hardware:   %s\n", hwText(epHardware(e)))
-		s := epScaling(e)
+		fmt.Fprintf(w, "Hardware:   %s\n", hwText(svcHardware(e)))
+		s := svcScaling(e)
 		fmt.Fprintf(w, "Autoscale:  %d to %d replicas, target %d concurrent requests each, scale to zero %s\n",
 			s.MinReplicas, s.MaxReplicas, s.TargetConcurrency, map[bool]string{true: "on", false: "off"}[s.ScaleToZero])
 	} else if t.RentalId != nil {
@@ -247,21 +269,31 @@ func epDetail(w io.Writer, e api.Endpoint) {
 	r := e.Replicas
 	fmt.Fprintf(w, "Replicas:   %d ready, %d starting, %d draining, %d warm, %d wanted\n", r.Ready, r.Provisioning, r.Draining, r.Warm, r.Desired)
 	fmt.Fprintf(w, "Spend:      %s this month (%s), cap %s\n", moneyStr(e.SpendThisMonth.Estimated), e.SpendThisMonth.Month, moneyPtr(e.SpendThisMonth.Cap))
-	fmt.Fprintf(w, "Keys:       legion endpoints keys list %s\n", san(e.Name))
+	fmt.Fprintf(w, "Keys:       legion services keys list %s\n", san(e.Name))
 }
 
 // ---- list / get ----
 
-func (a *app) epListCmd() *cobra.Command {
-	var typ, rental string
+func (a *app) svcListCmd() *cobra.Command {
+	var mode, rental string
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List endpoints",
-		Long:    "List the organization's endpoints: exposed ports, served models and autoscaled models, with access, scaling, status and URL. Filter with --type model|autoscaled|port or --rental <rental>. Use -o wide for ids and spend.",
-		Example: "  legion endpoints list\n  legion endpoints list --type port -o name\n  legion endpoints list --rental quiet-river-7k2f",
+		Short:   "List services",
+		Long:    "List the organization's services, on a rental or autoscaled, with access, scaling, status and Service URL. Filter with --mode rental|autoscaled or --rental <rental>. Use -o wide for ids and spend.",
+		Example: "  legion services list\n  legion services list --mode rental -o name\n  legion services list --rental quiet-river-7k2f",
 		Args:    args(0, 0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			var want api.ServiceMode
+			switch mode {
+			case "":
+			case "rental":
+				want = api.ServiceModeRental
+			case "autoscaled":
+				want = api.ServiceModeAutoscaled
+			default:
+				return usagef("legion services list --help", "--mode must be rental or autoscaled, got %q", mode)
+			}
 			c, err := a.api()
 			if err != nil {
 				return err
@@ -275,53 +307,37 @@ func (a *app) epListCmd() *cobra.Command {
 				}
 				rid = &r.Id
 			}
-			return a.listEndpointsRun(ctx, c, typ, rid)
+			ss, err := a.listServices(ctx, c, rid)
+			if err != nil {
+				return err
+			}
+			kept := ss[:0:0]
+			for _, s := range ss {
+				if want == "" || s.Mode == want {
+					kept = append(kept, s)
+				}
+			}
+			if len(kept) == 0 {
+				a.info("No services yet. Create one: legion services create --help")
+			}
+			return a.emit(svcResult(kept))
 		},
 	}
-	cmd.Flags().StringVar(&typ, "type", "", "only this type: model, autoscaled or port")
-	cmd.Flags().StringVar(&rental, "rental", "", "only the endpoints that expose this rental")
+	cmd.Flags().StringVar(&mode, "mode", "", "only this mode: rental or autoscaled")
+	cmd.Flags().StringVar(&rental, "rental", "", "only the services on this rental")
 	return cmd
 }
 
-func (a *app) listEndpointsRun(ctx context.Context, c *api.ClientWithResponses, typ string, rental *api.RentalID) error {
-	var want api.EndpointType
-	switch typ {
-	case "":
-	case "model":
-		want = api.EndpointTypeModel
-	case "autoscaled", "autoscaled_model":
-		want = api.EndpointTypeAutoscaledModel
-	case "port":
-		want = api.EndpointTypePort
-	default:
-		return usagef("legion endpoints list --help", "--type must be model, autoscaled or port, got %q", typ)
-	}
-	es, err := a.listEndpoints(ctx, c)
-	if err != nil {
-		return err
-	}
-	kept := es[:0:0]
-	for _, e := range es {
-		if (want == "" || e.Type == want) && (rental == nil || (e.Target.RentalId != nil && *e.Target.RentalId == *rental)) {
-			kept = append(kept, e)
-		}
-	}
-	if len(kept) == 0 {
-		a.info("No endpoints yet. Create one: legion endpoints create --help")
-	}
-	return a.emit(epResult(kept))
-}
-
-func (a *app) epGetCmd() *cobra.Command {
+func (a *app) svcGetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "get <endpoint>",
-		Short:   "Show one endpoint",
-		Long:    "Show an endpoint's URL, status, hardware, replicas and spend. <endpoint> is an id, a name or a unique prefix.",
-		Example: "  legion endpoints get chat\n  legion endpoints get chat -o json",
+		Use:     "get <service>",
+		Short:   "Show one service",
+		Long:    "Show a service's URL, status, hardware, replicas and spend. <service> is an id, a name or a unique prefix.",
+		Example: "  legion services get chat\n  legion services get chat -o json",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			return a.withEndpoint(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Endpoint) error {
-				r, err := c.GetEndpointWithResponse(ctx, e.Id)
+			return a.withService(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Service) error {
+				r, err := c.GetServiceWithResponse(ctx, e.Id)
 				if err := a.ok(r, err); err != nil {
 					return err
 				}
@@ -329,7 +345,7 @@ func (a *app) epGetCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return a.emit(output.Result{Data: fresh, Names: []string{fresh.Name}, Human: func(w io.Writer) { epDetail(w, *fresh) }})
+				return a.emit(output.Result{Data: fresh, Names: []string{fresh.Name}, Human: func(w io.Writer) { svcDetail(w, *fresh) }})
 			})
 		},
 	}
@@ -337,7 +353,7 @@ func (a *app) epGetCmd() *cobra.Command {
 
 // ---- update / pause / resume / delete ----
 
-func (a *app) epUpdateCmd() *cobra.Command {
+func (a *app) svcUpdateCmd() *cobra.Command {
 	var sf scaleFlags
 	var hf hwFlags
 	var capStr, catalog, image, access string
@@ -347,22 +363,22 @@ func (a *app) epUpdateCmd() *cobra.Command {
 	var unsetEnv []string
 	var clearCommand, clearArgs, clearSettings bool
 	cmd := &cobra.Command{
-		Use:   "update <endpoint>",
-		Short: "Change an endpoint's access, scaling, hardware, price ceiling or cap",
+		Use:   "update <service>",
+		Short: "Change a service's access, scaling, hardware, price ceiling or cap",
 		Long: `Change only the settings you name; everything else stays and the URL never changes.
 --access public|keys switches who may call it (keys can exist while it is public, so there is no downtime);
 --source <cidr> (repeatable) limits callers to those networks in either mode.
-Scaling, hardware, --catalog and --image apply to autoscaled endpoints; changes that can raise spend show the new
+Scaling, hardware, --catalog and --image apply to autoscaled services; changes that can raise spend show the new
 cost floor and ceiling and ask for confirmation (or pass --yes). Config changes roll one replica at a time with one
-surge replica, which counts against the maximum and the monthly cap. --revision refuses the change when the endpoint
-was edited meanwhile. Turn autoscaling on or off with 'legion endpoints autoscale'.
+surge replica, which counts against the maximum and the monthly cap. --revision refuses the change when the service
+was edited meanwhile. Turn autoscaling on or off with 'legion services autoscale'.
 
-Container configuration (autoscaled endpoints): --env and --secret-env add or change variables and --unset-env removes
+Container configuration (autoscaled services): --env and --secret-env add or change variables and --unset-env removes
 them; the others stay. A secret you do not name keeps its stored value. --setting changes the named model settings,
 --command and --arg replace the entrypoint and arguments of your own image; --clear-settings, --clear-command and
 --clear-args remove them. Any of these changes the replica template, so replicas are replaced one at a time with one
 surge replica and a running replica restarts. Anything in the container can be read by the provider's machine.`,
-		Example: "  legion endpoints update chat --max 4\n  legion endpoints update chat --access keys\n  legion endpoints update chat --gpu H100 --gpu A100 --max-price 3 --monthly-cap 600",
+		Example: "  legion services update chat --max 4\n  legion services update chat --access keys\n  legion services update chat --gpu H100 --gpu A100 --max-price 3 --monthly-cap 600",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
 			fl := cmd.Flags()
@@ -372,38 +388,38 @@ surge replica and a running replica restarts. Anything in the container can be r
 			accessChanged := access != "" || len(sources) > 0
 			cfgChanged := cf.any() || len(unsetEnv) > 0 || clearCommand || clearArgs || clearSettings
 			if (clearCommand && len(cf.command) > 0) || (clearArgs && len(cf.arg) > 0) || (clearSettings && len(cf.setting) > 0) {
-				return usagef("legion endpoints update --help", "do not combine --clear-command, --clear-args or --clear-settings with the flag that sets the same thing")
+				return usagef("legion services update --help", "do not combine --clear-command, --clear-args or --clear-settings with the flag that sets the same thing")
 			}
 			if access != "" && access != "public" && access != "keys" {
-				return usagef("legion endpoints update --help", "--access must be public or keys, got %q", access)
+				return usagef("legion services update --help", "--access must be public or keys, got %q", access)
 			}
 			if scIn == nil && !hwChanged && !capChanged && !accessChanged && catalog == "" && image == "" && !cfgChanged {
-				return usagef("legion endpoints update --help", "nothing to change: pass at least one of --env, --secret-env, --unset-env, --setting, --command, --arg, --access, --source, --min, --max, --scale-to-zero, --target-concurrency, --gpu, --max-price, --spot, --monthly-cap, --catalog, --image")
+				return usagef("legion services update --help", "nothing to change: pass at least one of --env, --secret-env, --unset-env, --setting, --command, --arg, --access, --source, --min, --max, --scale-to-zero, --target-concurrency, --gpu, --max-price, --spot, --monthly-cap, --catalog, --image")
 			}
-			cfg, err := a.resolveConfig(cmd, &cf, "endpoints update")
+			cfg, err := a.resolveConfig(cmd, &cf, "services update")
 			if err != nil {
 				return err
 			}
 			for _, n := range unsetEnv {
 				if err := checkEnvName(n); err != nil {
-					return usagef("legion endpoints update --help", "--unset-env: %v", err)
+					return usagef("legion services update --help", "--unset-env: %v", err)
 				}
 			}
-			return a.withEndpoint(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Endpoint) error {
-				req := api.UpdateEndpointRequest{}
+			return a.withService(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Service) error {
+				req := api.UpdateServiceRequest{}
 				if fl.Changed("revision") {
 					req.Revision = &revision
 				}
 				spend := false
-				if cfgChanged && !epAutoscaled(*e) {
-					return usagef("legion endpoints get "+e.Name, "%s exposes a rental's port; container configuration belongs to autoscaled endpoints (for a rental: legion rental env)", e.Name)
+				if cfgChanged && !svcAutoscaled(*e) {
+					return usagef("legion services get "+e.Name, "%s exposes a rental's port; container configuration belongs to autoscaled services (for a rental: legion rental env)", e.Name)
 				}
 				if scIn != nil || hwChanged || catalog != "" || image != "" || cfgChanged {
-					tc := api.EndpointTargetChange{Scaling: scIn}
+					tc := api.ServiceTargetChange{Scaling: scIn}
 					if cfgChanged {
 						tp := e.Target.Template
 						isCatalog := catalog != "" || (image == "" && tp != nil && tp.CatalogId != nil && *tp.CatalogId != "")
-						if err := checkEndpointConfig(cfg, isCatalog); err != nil {
+						if err := checkServiceConfig(cfg, isCatalog); err != nil {
 							return err
 						}
 						var curEnv []api.EnvVar
@@ -448,7 +464,7 @@ surge replica and a running replica restarts. Anything in the container can be r
 						}
 					}
 					if hwChanged {
-						hw, err := hf.apply(cmd, epHardware(*e))
+						hw, err := hf.apply(cmd, svcHardware(*e))
 						if err != nil {
 							return err
 						}
@@ -474,29 +490,29 @@ surge replica and a running replica restarts. Anything in the container can be r
 					capM = e.MonthlySpendCap
 				}
 				if accessChanged {
-					acc := api.EndpointAccess{Mode: e.Access.Mode, Sources: e.Access.Sources}
+					acc := api.ServiceAccess{Mode: e.Access.Mode, Sources: e.Access.Sources}
 					if access != "" {
-						acc.Mode = api.EndpointAccessMode(access)
+						acc.Mode = api.ServiceAccessMode(access)
 					}
 					if len(sources) > 0 {
 						acc.Sources = &sources
 					}
 					req.Access = &acc
-					if acc.Mode == api.EndpointAccessPublic && e.Access.Mode != api.EndpointAccessPublic {
+					if acc.Mode == api.ServiceAccessPublic && e.Access.Mode != api.ServiceAccessPublic {
 						if err := a.confirm(fmt.Sprintf("Make %s public? Callers no longer need a key.", e.Name), "refusing to make "+e.Name+" public without confirmation: callers would no longer need a key"); err != nil {
 							return err
 						}
 					}
 				}
-				if spend && epAutoscaled(*e) {
-					var hw api.EndpointHardware
+				if spend && svcAutoscaled(*e) {
+					var hw api.ServiceHardware
 					if req.Target != nil && req.Target.Hardware != nil {
 						hw = *req.Target.Hardware
 					} else {
-						hw = epHardware(*e)
+						hw = svcHardware(*e)
 					}
-					sc := overlay(epScaling(*e), scIn)
-					est, err := a.epEstimate(ctx, c, epCatalog(*e), hw, sc, capM)
+					sc := overlay(svcScaling(*e), scIn)
+					est, err := a.svcEstimate(ctx, c, svcCatalog(*e), hw, sc, capM)
 					if err != nil {
 						return err
 					}
@@ -506,7 +522,7 @@ surge replica and a running replica restarts. Anything in the container can be r
 						return err
 					}
 				}
-				r, err := c.UpdateEndpointWithResponse(ctx, e.Id, req)
+				r, err := c.UpdateServiceWithResponse(ctx, e.Id, req)
 				if err := a.ok(r, err); err != nil {
 					return err
 				}
@@ -515,19 +531,19 @@ surge replica and a running replica restarts. Anything in the container can be r
 					return err
 				}
 				a.info("Updated %s.", upd.Name)
-				return a.emit(output.Result{Data: upd, Names: []string{upd.Name}, Human: func(w io.Writer) { epDetail(w, *upd) }})
+				return a.emit(output.Result{Data: upd, Names: []string{upd.Name}, Human: func(w io.Writer) { svcDetail(w, *upd) }})
 			})
 		},
 	}
 	sf.register(cmd)
 	hf.register(cmd)
 	fl := cmd.Flags()
-	fl.StringVar(&access, "access", "", "public (anyone) or keys (callers need an access key)")
+	fl.StringVar(&access, "access", "", "public (anyone) or keys (callers need a service key)")
 	fl.StringArrayVar(&sources, "source", nil, "allowed source CIDR, for example 203.0.113.0/24 (repeatable)")
 	fl.StringVar(&capStr, "monthly-cap", "", "monthly spend cap in dollars (UTC calendar month)")
 	fl.StringVar(&catalog, "catalog", "", "switch to this catalog model id")
 	fl.StringVar(&image, "image", "", "switch to this container image")
-	fl.Int64Var(&revision, "revision", 0, "refuse the change unless the endpoint is at this revision")
+	fl.Int64Var(&revision, "revision", 0, "refuse the change unless the service is at this revision")
 	cf.register(cmd, "your own image")
 	fl.StringArrayVar(&unsetEnv, "unset-env", nil, "remove this environment variable (repeatable)")
 	fl.BoolVar(&clearSettings, "clear-settings", false, "remove all model settings (the image defaults apply)")
@@ -536,75 +552,75 @@ surge replica and a running replica restarts. Anything in the container can be r
 	return cmd
 }
 
-func (a *app) epPauseCmd() *cobra.Command {
+func (a *app) svcPauseCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "pause <endpoint>",
+		Use:   "pause <service>",
 		Short: "Stop serving and release the replicas",
 		Long: `Pause: no replicas run and no GPU cost accrues. The URL and keys are kept and callers get 503
-endpoint_paused until you resume. Warm replicas are released after the warm expiry.`,
-		Example: "  legion endpoints pause chat\n  legion endpoints pause chat -o json",
+service_paused until you resume. Warm replicas are released after the warm expiry.`,
+		Example: "  legion services pause chat\n  legion services pause chat -o json",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			return a.withEndpoint(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Endpoint) error {
-				r, err := c.PauseEndpointWithResponse(ctx, e.Id)
+			return a.withService(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Service) error {
+				r, err := c.PauseServiceWithResponse(ctx, e.Id)
 				if err := a.ok(r, err); err != nil {
 					return err
 				}
 				got := ptrOr(r.JSON200, *e)
-				a.info("Paused %s. Resume: legion endpoints resume %s", got.Name, got.Name)
-				return a.emit(output.Result{Data: got, Names: []string{got.Name}, Human: func(w io.Writer) { epDetail(w, got) }})
+				a.info("Paused %s. Resume: legion services resume %s", got.Name, got.Name)
+				return a.emit(output.Result{Data: got, Names: []string{got.Name}, Human: func(w io.Writer) { svcDetail(w, got) }})
 			})
 		},
 	}
 }
 
-func (a *app) epResumeCmd() *cobra.Command {
+func (a *app) svcResumeCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "resume <endpoint>",
+		Use:     "resume <service>",
 		Short:   "Start serving again",
-		Long:    "Resume a paused endpoint. Replicas start again and bill per GPU-hour; the cost floor and ceiling are shown and you confirm (or pass --yes).",
-		Example: "  legion endpoints resume chat\n  legion endpoints resume chat --yes",
+		Long:    "Resume a paused service. Replicas start again and bill per GPU-hour; the cost floor and ceiling are shown and you confirm (or pass --yes).",
+		Example: "  legion services resume chat\n  legion services resume chat --yes",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			return a.withEndpoint(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Endpoint) error {
-				est, err := a.epEstimate(ctx, c, epCatalog(*e), epHardware(*e), epScaling(*e), e.MonthlySpendCap)
+			return a.withService(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Service) error {
+				est, err := a.svcEstimate(ctx, c, svcCatalog(*e), svcHardware(*e), svcScaling(*e), e.MonthlySpendCap)
 				if err != nil {
 					return err
 				}
-				a.summary(e.Name, epHardware(*e), epScaling(*e), est, e.MonthlySpendCap)
+				a.summary(e.Name, svcHardware(*e), svcScaling(*e), est, e.MonthlySpendCap)
 				if err := a.confirm(fmt.Sprintf("Resume %s? Replicas start and bill per GPU-hour.", e.Name), "refusing to resume "+e.Name+" without confirmation: it starts billed replicas"); err != nil {
 					return err
 				}
-				r, err := c.ResumeEndpointWithResponse(ctx, e.Id)
+				r, err := c.ResumeServiceWithResponse(ctx, e.Id)
 				if err := a.ok(r, err); err != nil {
 					return err
 				}
 				got := ptrOr(r.JSON200, *e)
 				a.info("Resumed %s: %s", got.Name, san(got.Url))
-				return a.emit(output.Result{Data: got, Names: []string{got.Name}, Human: func(w io.Writer) { epDetail(w, got) }})
+				return a.emit(output.Result{Data: got, Names: []string{got.Name}, Human: func(w io.Writer) { svcDetail(w, got) }})
 			})
 		},
 	}
 }
 
-func (a *app) epDeleteCmd() *cobra.Command {
+func (a *app) svcDeleteCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "delete <endpoint>",
+		Use:     "delete <service>",
 		Aliases: []string{"rm"},
-		Short:   "Delete an endpoint, its replicas and its keys",
-		Long: `Delete the endpoint: replicas stop, every key stops working and the URL goes away. This cannot be undone.
-On a terminal you must type the endpoint's name to confirm; in scripts pass --yes. The API may ask for step-up
+		Short:   "Delete a service, its replicas and its keys",
+		Long: `Delete the service: replicas stop, every key stops working and the URL goes away. This cannot be undone.
+On a terminal you must type the service's name to confirm; in scripts pass --yes. The API may ask for step-up
 verification, which needs a browser session.`,
-		Example: "  legion endpoints delete chat\n  legion endpoints delete chat --yes",
+		Example: "  legion services delete chat\n  legion services delete chat --yes",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			return a.withEndpoint(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Endpoint) error {
+			return a.withService(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Service) error {
 				if !a.yes {
 					if !a.interactive() {
 						return usagef("Add --yes to delete without a prompt.", "refusing to delete %s without confirmation: its replicas stop and all its keys are revoked for good", e.Name)
 					}
 					fmt.Fprintf(a.env.Stderr, "Deleting %s stops its replicas and revokes all its keys for good.\n", e.Name)
-					got, err := a.prompt.Ask(fmt.Sprintf("Type the endpoint name (%s) to confirm:", e.Name))
+					got, err := a.prompt.Ask(fmt.Sprintf("Type the service name (%s) to confirm:", e.Name))
 					if errors.Is(err, context.Canceled) {
 						return err
 					}
@@ -612,13 +628,13 @@ verification, which needs a browser session.`,
 						return &cliError{Msg: "aborted: the name did not match", Exit: client.ExitError}
 					}
 				}
-				r, err := c.DeleteEndpointWithResponse(ctx, e.Id)
+				r, err := c.DeleteServiceWithResponse(ctx, e.Id)
 				if err := a.ok(r, err); err != nil {
 					return err
 				}
 				a.info("Deleting %s: replicas are stopping and billing ends.", e.Name)
 				got := ptrOr(r.JSON202, *e)
-				return a.emit(output.Result{Data: got, Names: []string{got.Name}, Human: func(w io.Writer) { epDetail(w, got) }})
+				return a.emit(output.Result{Data: got, Names: []string{got.Name}, Human: func(w io.Writer) { svcDetail(w, got) }})
 			})
 		},
 	}
@@ -626,23 +642,23 @@ verification, which needs a browser session.`,
 
 // ---- replicas / usage / events ----
 
-func (a *app) epReplicasCmd() *cobra.Command {
+func (a *app) svcReplicasCmd() *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
-		Use:     "replicas <endpoint>",
-		Short:   "List an endpoint's replicas",
-		Long:    "List the replicas (rentals) serving the endpoint, live and warm. --all adds the replicas retired in the last 7 days.",
-		Example: "  legion endpoints replicas chat\n  legion endpoints replicas chat --all -o wide",
+		Use:     "replicas <service>",
+		Short:   "List a service's replicas",
+		Long:    "List the replicas (rentals) serving the service, live and warm. --all adds the replicas retired in the last 7 days.",
+		Example: "  legion services replicas chat\n  legion services replicas chat --all -o wide",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			return a.withEndpoint(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Endpoint) error {
+			return a.withService(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Service) error {
 				rs, err := a.listReplicas(ctx, c, e.Id, all)
 				if err != nil {
 					return err
 				}
 				return a.emit(listResult(rs, []string{"REPLICA", "PHASE", "READY", "GPU", "PRICE/HR", "TIER", "IN FLIGHT"}, []string{"RENTAL ID", "HOST", "STATE", "CREATED", "RETIRED"},
-					func(r api.EndpointReplica) string { return replicaName(r) },
-					func(r api.EndpointReplica) []string {
+					func(r api.ServiceReplica) string { return replicaName(r) },
+					func(r api.ServiceReplica) []string {
 						host := ptrOr(r.Host.Name, "")
 						if r.Host.Country != nil {
 							host += " (" + *r.Host.Country + ")"
@@ -658,20 +674,20 @@ func (a *app) epReplicasCmd() *cobra.Command {
 	return cmd
 }
 
-func replicaName(r api.EndpointReplica) string {
+func replicaName(r api.ServiceReplica) string {
 	if r.RentalName != nil && *r.RentalName != "" {
 		return *r.RentalName
 	}
 	return r.RentalId.String()
 }
 
-func (a *app) listReplicas(ctx context.Context, c *api.ClientWithResponses, id api.EndpointID, retired bool) ([]api.EndpointReplica, error) {
-	return collect(0, func(cur *string, n int) ([]api.EndpointReplica, *string, error) {
-		p := &api.ListEndpointReplicasParams{Cursor: cur, Limit: &n}
+func (a *app) listReplicas(ctx context.Context, c *api.ClientWithResponses, id api.ServiceID, retired bool) ([]api.ServiceReplica, error) {
+	return collect(0, func(cur *string, n int) ([]api.ServiceReplica, *string, error) {
+		p := &api.ListServiceReplicasParams{Cursor: cur, Limit: &n}
 		if retired {
 			p.IncludeRetired = &retired
 		}
-		r, err := c.ListEndpointReplicasWithResponse(ctx, id, p)
+		r, err := c.ListServiceReplicasWithResponse(ctx, id, p)
 		if err := a.ok(r, err); err != nil {
 			return nil, nil, err
 		}
@@ -683,29 +699,29 @@ func (a *app) listReplicas(ctx context.Context, c *api.ClientWithResponses, id a
 	})
 }
 
-func (a *app) epUsageCmd() *cobra.Command {
+func (a *app) svcUsageCmd() *cobra.Command {
 	var days int
 	var window string
 	cmd := &cobra.Command{
-		Use:     "usage <endpoint>",
+		Use:     "usage <service>",
 		Short:   "Show requests, errors, replica-hours and cost per day",
-		Long:    "Show the endpoint's usage per day (requests, errors, replica-hours, cost) and this month's spend against the monthly cap. Request-rate and latency points for the --window are in -o json.",
-		Example: "  legion endpoints usage chat\n  legion endpoints usage chat --days 7 -o json",
+		Long:    "Show the service's usage per day (requests, errors, replica-hours, cost) and this month's spend against the monthly cap. Request-rate and latency points for the --window are in -o json.",
+		Example: "  legion services usage chat\n  legion services usage chat --days 7 -o json",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			return a.withEndpoint(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Endpoint) error {
-				p := &api.GetEndpointUsageParams{}
+			return a.withService(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Service) error {
+				p := &api.GetServiceUsageParams{}
 				if cmd.Flags().Changed("days") {
 					p.Days = &days
 				}
 				if window != "" {
-					w := api.EndpointMetricsWindow(window)
-					if w != api.EndpointMetricsWindow1h && w != api.EndpointMetricsWindow24h && w != api.EndpointMetricsWindow7d {
-						return usagef("legion endpoints usage --help", "--window must be 1h, 24h or 7d, got %q", window)
+					w := api.ServiceMetricsWindow(window)
+					if w != api.ServiceMetricsWindow1h && w != api.ServiceMetricsWindow24h && w != api.ServiceMetricsWindow7d {
+						return usagef("legion services usage --help", "--window must be 1h, 24h or 7d, got %q", window)
 					}
 					p.Window = &w
 				}
-				r, err := c.GetEndpointUsageWithResponse(ctx, e.Id, p)
+				r, err := c.GetServiceUsageWithResponse(ctx, e.Id, p)
 				if err := a.ok(r, err); err != nil {
 					return err
 				}
@@ -735,18 +751,18 @@ func (a *app) epUsageCmd() *cobra.Command {
 	return cmd
 }
 
-func (a *app) epEventsCmd() *cobra.Command {
+func (a *app) svcEventsCmd() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
-		Use:     "events <endpoint>",
+		Use:     "events <service>",
 		Short:   "Show scaling and configuration history",
 		Long:    "Show what changed and why: scaling steps, config changes and key activity, newest first.",
-		Example: "  legion endpoints events chat\n  legion endpoints events chat --limit 20 -o json",
+		Example: "  legion services events chat\n  legion services events chat --limit 20 -o json",
 		Args:    args(0, 1),
 		RunE: func(cmd *cobra.Command, as []string) error {
-			return a.withEndpoint(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Endpoint) error {
-				evs, err := collect(limit, func(cur *string, n int) ([]api.EndpointEvent, *string, error) {
-					r, err := c.ListEndpointEventsWithResponse(ctx, e.Id, &api.ListEndpointEventsParams{Cursor: cur, Limit: &n})
+			return a.withService(cmd, as, func(ctx context.Context, c *api.ClientWithResponses, e *api.Service) error {
+				evs, err := collect(limit, func(cur *string, n int) ([]api.ServiceEvent, *string, error) {
+					r, err := c.ListServiceEventsWithResponse(ctx, e.Id, &api.ListServiceEventsParams{Cursor: cur, Limit: &n})
 					if err := a.ok(r, err); err != nil {
 						return nil, nil, err
 					}
@@ -760,8 +776,8 @@ func (a *app) epEventsCmd() *cobra.Command {
 					return err
 				}
 				return a.emit(listResult(evs, []string{"WHEN", "EVENT", "REPLICAS", "REASON"}, []string{"ID", "ACTOR", "RENTAL"},
-					func(ev api.EndpointEvent) string { return fmt.Sprint(ev.Id) },
-					func(ev api.EndpointEvent) []string {
+					func(ev api.ServiceEvent) string { return fmt.Sprint(ev.Id) },
+					func(ev api.ServiceEvent) []string {
 						chg := ""
 						if ev.ReplicasBefore != nil && ev.ReplicasAfter != nil {
 							chg = fmt.Sprintf("%d -> %d", *ev.ReplicasBefore, *ev.ReplicasAfter)
